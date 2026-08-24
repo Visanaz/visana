@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.visana.erp.commerce.infrastructure.adapter.out.persistence.OrderPersistenceAdapterTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.551 s -- in com.visana.erp.commerce.infrastructure.adapter.out.persistence.OrderPersistenceAdapterTest
