@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.visana.erp.commerce.application.service.ConfirmOrderPaymentServiceTest
--------------------------------------------------------------------------------
-Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.186 s -- in com.visana.erp.commerce.application.service.ConfirmOrderPaymentServiceTest
