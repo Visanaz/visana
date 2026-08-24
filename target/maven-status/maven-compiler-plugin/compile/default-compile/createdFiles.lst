@@ -13,6 +13,7 @@ com\visana\erp\network\domain\model\GenealogyNode.class
 com\visana\erp\compensation\application\port\out\CommissionRepository.class
 com\visana\erp\core\domain\model\Money.class
 com\visana\erp\compensation\application\port\out\GenealogyProviderPort.class
+com\visana\erp\compensation\infrastructure\adapter\out\persistence\QualificationPersistenceAdapter.class
 com\visana\erp\core\domain\model\Percentage.class
 com\visana\erp\ledger\domain\model\PayoutStatus.class
 com\visana\erp\ledger\domain\model\PayoutId.class
@@ -57,6 +58,7 @@ com\visana\erp\compensation\domain\model\CommissionId.class
 com\visana\erp\compensation\domain\model\CommissionStatus.class
 com\visana\erp\commerce\application\port\out\OrderRepository.class
 com\visana\erp\ledger\domain\service\SettlementService.class
+com\visana\erp\compensation\infrastructure\adapter\out\persistence\GenealogyPersistenceAdapter.class
 com\visana\erp\compensation\domain\service\UnilevelCompensationCalculatorService.class
 com\visana\erp\compensation\infrastructure\adapter\out\persistence\CommissionPlanLevelJpaEntity.class
 com\visana\erp\commerce\infrastructure\adapter\out\persistence\OrderJpaEntity.class
