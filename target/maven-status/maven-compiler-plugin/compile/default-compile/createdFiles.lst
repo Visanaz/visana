@@ -65,3 +65,4 @@ com\visana\erp\network\domain\model\SponsorId.class
 com\visana\erp\compensation\domain\model\CommissionType.class
 com\visana\erp\network\domain\model\NodeStatus.class
 com\visana\erp\ledger\domain\model\TransactionType.class
+com\visana\erp\core\infrastructure\config\UseCaseBeanConfig.class
