@@ -1,6 +1,6 @@
 CREATE TABLE orders (
     id VARCHAR(36) NOT NULL,
-    empresa_id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
     affiliate_id VARCHAR(36) NOT NULL,
     order_type VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE order_items (
 
 CREATE TABLE commissions (
     id VARCHAR(36) NOT NULL,
-    empresa_id VARCHAR(36) NOT NULL,
+    tenant_id VARCHAR(36) NOT NULL,
     beneficiary_id VARCHAR(36) NOT NULL,
     order_id VARCHAR(36) NOT NULL,
     amount DECIMAL(19,4) NOT NULL,

@@ -27,7 +27,7 @@ class LegacyDataMigrationServiceTest {
     @Test
     void shouldMigrateValidUser() {
         LegacyUserDto user = new LegacyUserDto(
-                UUID.randomUUID(), UUID.randomUUID(), null, "AFILIADO", "ACTIVO"
+                UUID.randomUUID(), UUID.randomUUID(), null, "AFFILIATE", "ACTIVE"
         );
         migrationService.migrateUser(user);
         assertTrue(migrationService.getConciliationReport().isEmpty());
@@ -47,7 +47,7 @@ class LegacyDataMigrationServiceTest {
     @Test
     void shouldMigrateValidOrder() {
         LegacyOrderDto order = new LegacyOrderDto(
-                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "COMPRA_DIRECTA", "PENDING", BigDecimal.valueOf(100)
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "PURCHASE", "PENDING", BigDecimal.valueOf(100)
         );
         migrationService.migrateOrder(order);
         assertTrue(migrationService.getConciliationReport().isEmpty());
