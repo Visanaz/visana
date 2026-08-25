@@ -55,14 +55,14 @@ class UnilevelCompensationCalculatorServiceTest {
     }
 
     private Order buildPaidOrder(AffiliateId buyer, Money orderAmount) {
-        Order order = new Order(tenantId, OrderId.generate(), buyer, OrderType.RECOMPRA);
+        Order order = new Order(tenantId, OrderId.generate(), buyer, OrderType.REPURCHASE);
         order.addItem(new OrderItem(ProductId.generate(), 1, orderAmount));
         order.confirmPayment();
         return order;
     }
 
     private GenealogyNode buildQualifiedNode(AffiliateId affiliateId, SponsorId sponsorId) {
-        GenealogyNode node = GenealogyNode.create(tenantId, affiliateId, sponsorId, NetworkRole.AFILIADO);
+        GenealogyNode node = GenealogyNode.create(tenantId, affiliateId, sponsorId, NetworkRole.AFFILIATE);
         node.activate();
         return node;
     }

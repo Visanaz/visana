@@ -77,7 +77,7 @@ class CalculateCommissionsServiceTest {
         when(commissionPlanProvider.getUnilevelPlan()).thenReturn(plan);
 
         AffiliateId sponsorId = AffiliateId.generate();
-        GenealogyNode sponsorNode = GenealogyNode.createRoot(tenantId, sponsorId, NetworkRole.AFILIADO);
+        GenealogyNode sponsorNode = GenealogyNode.createRoot(tenantId, sponsorId, NetworkRole.AFFILIATE);
         when(genealogyProvider.getUpline(buyerId, 8)).thenReturn(List.of(sponsorNode));
 
         AffiliateQualification sponsorQualification = new AffiliateQualification(tenantId, sponsorId, Period.of(YearMonth.now()), true, true, 1);

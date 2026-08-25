@@ -17,7 +17,7 @@ class OrderTest {
 
     @Test
     void shouldCreateOrderAndCalculateTotal() {
-        Order order = new Order(tenantId, orderId, affiliateId, OrderType.COMPRA_DIRECTA);
+        Order order = new Order(tenantId, orderId, affiliateId, OrderType.PURCHASE);
         
         assertEquals(OrderStatus.PENDING, order.getStatus());
         
@@ -34,7 +34,7 @@ class OrderTest {
 
     @Test
     void shouldConfirmPaymentWhenPendingAndHasItems() {
-        Order order = new Order(tenantId, orderId, affiliateId, OrderType.AFILIACION);
+        Order order = new Order(tenantId, orderId, affiliateId, OrderType.AFFILIATION);
         order.addItem(new OrderItem(ProductId.generate(), 1, Money.of(new BigDecimal("200.00"))));
         
         order.confirmPayment();
@@ -44,7 +44,7 @@ class OrderTest {
 
     @Test
     void shouldThrowExceptionWhenConfirmingEmptyOrder() {
-        Order order = new Order(tenantId, orderId, affiliateId, OrderType.AFILIACION);
+        Order order = new Order(tenantId, orderId, affiliateId, OrderType.AFFILIATION);
         
         IllegalStateException exception = assertThrows(IllegalStateException.class, order::confirmPayment);
         assertTrue(exception.getMessage().contains("Cannot confirm payment for an empty order"));
@@ -52,7 +52,7 @@ class OrderTest {
 
     @Test
     void shouldThrowExceptionWhenConfirmingCancelledOrder() {
-        Order order = new Order(tenantId, orderId, affiliateId, OrderType.RECOMPRA);
+        Order order = new Order(tenantId, orderId, affiliateId, OrderType.REPURCHASE);
         order.cancel();
         
         IllegalStateException exception = assertThrows(IllegalStateException.class, order::confirmPayment);
@@ -61,7 +61,7 @@ class OrderTest {
     
     @Test
     void shouldThrowExceptionWhenConfirmingAlreadyPaidOrder() {
-        Order order = new Order(tenantId, orderId, affiliateId, OrderType.RECOMPRA);
+        Order order = new Order(tenantId, orderId, affiliateId, OrderType.REPURCHASE);
         order.addItem(new OrderItem(ProductId.generate(), 1, Money.of(new BigDecimal("50.00"))));
         order.confirmPayment();
         
@@ -71,7 +71,7 @@ class OrderTest {
 
     @Test
     void shouldThrowExceptionWhenAddingItemsToPaidOrder() {
-        Order order = new Order(tenantId, orderId, affiliateId, OrderType.RECOMPRA);
+        Order order = new Order(tenantId, orderId, affiliateId, OrderType.REPURCHASE);
         order.addItem(new OrderItem(ProductId.generate(), 1, Money.of(new BigDecimal("50.00"))));
         order.confirmPayment();
         
@@ -83,7 +83,7 @@ class OrderTest {
     
     @Test
     void shouldThrowExceptionWhenCancelingPaidOrder() {
-        Order order = new Order(tenantId, orderId, affiliateId, OrderType.RECOMPRA);
+        Order order = new Order(tenantId, orderId, affiliateId, OrderType.REPURCHASE);
         order.addItem(new OrderItem(ProductId.generate(), 1, Money.of(new BigDecimal("50.00"))));
         order.confirmPayment();
         

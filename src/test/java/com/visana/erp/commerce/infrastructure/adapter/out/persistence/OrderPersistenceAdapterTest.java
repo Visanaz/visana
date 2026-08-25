@@ -42,7 +42,7 @@ class OrderPersistenceAdapterTest {
 
     @Test
     void shouldSaveAndFindOrder() {
-        Order order = new Order(tenantId, orderId, affiliateId, OrderType.AFILIACION);
+        Order order = new Order(tenantId, orderId, affiliateId, OrderType.AFFILIATION);
         order.addItem(new OrderItem(productId, 2, Money.of(new BigDecimal("50.00"))));
 
         adapter.save(order);
