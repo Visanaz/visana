@@ -44,7 +44,7 @@ class ConfirmOrderPaymentServiceTest {
     void setUp() {
         service = new ConfirmOrderPaymentService(orderRepository, eventPublisher);
         orderId = OrderId.generate();
-        order = new Order(TenantId.generate(), orderId, AffiliateId.generate(), OrderType.COMPRA_DIRECTA);
+        order = new Order(TenantId.generate(), orderId, AffiliateId.generate(), OrderType.PURCHASE);
         order.addItem(new OrderItem(ProductId.generate(), 1, Money.of(new BigDecimal("100.00"))));
     }
 
