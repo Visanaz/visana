@@ -33,6 +33,7 @@ com\visana\erp\migration\application\dto\LegacyUserDto.class
 com\visana\erp\compensation\infrastructure\adapter\in\event\OrderPaidEventListener.class
 com\visana\erp\commerce\domain\model\ProductId.class
 com\visana\erp\ledger\domain\model\InsufficientFundsException.class
+com\visana\erp\core\infrastructure\config\SecurityConfig.class
 com\visana\erp\compensation\application\service\CalculateCommissionsService.class
 com\visana\erp\ledger\domain\model\Payout.class
 com\visana\erp\compensation\application\port\in\CalculateCommissionsUseCase.class
