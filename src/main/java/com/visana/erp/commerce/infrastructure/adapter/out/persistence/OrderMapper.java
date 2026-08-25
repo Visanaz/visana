@@ -4,7 +4,6 @@ import com.visana.erp.commerce.domain.model.Order;
 import com.visana.erp.commerce.domain.model.OrderId;
 import com.visana.erp.commerce.domain.model.OrderItem;
 import com.visana.erp.commerce.domain.model.OrderStatus;
-import com.visana.erp.commerce.domain.model.OrderType;
 import com.visana.erp.commerce.domain.model.ProductId;
 import com.visana.erp.core.domain.model.Money;
 import com.visana.erp.core.domain.model.TenantId;
@@ -19,17 +18,17 @@ public class OrderMapper {
 
     public OrderJpaEntity toJpaEntity(Order order) {
         OrderJpaEntity entity = new OrderJpaEntity();
-        entity.setId(order.getOrderId().value().toString());
-        entity.setEmpresaId(order.getTenantId().value().toString());
-        entity.setAffiliateId(order.getAffiliateId().value().toString());
-        entity.setOrderType(order.getType().name());
-        entity.setStatus(order.getStatus().name());
+        entity.setId(order.getOrderId().value());
+        entity.setTenantId(order.getTenantId().value());
+        entity.setAffiliateId(order.getAffiliateId().value());
+        entity.setOrderType(order.getType());
+        entity.setStatus(order.getStatus());
 
         entity.setItems(order.getItems().stream().map(item -> {
             OrderItemJpaEntity itemEntity = new OrderItemJpaEntity();
-            itemEntity.setId(UUID.randomUUID().toString()); // Items act as Value Objects in Domain, but need IDs in DB
+            itemEntity.setId(UUID.randomUUID()); // Items act as Value Objects in Domain, but need IDs in DB
             itemEntity.setOrder(entity);
-            itemEntity.setProductId(item.getProductId().value().toString());
+            itemEntity.setProductId(item.getProductId().value());
             itemEntity.setQuantity(item.getQuantity());
             itemEntity.setUnitPrice(item.getUnitPrice().amount());
             return itemEntity;
@@ -40,13 +39,13 @@ public class OrderMapper {
 
     public Order toDomainEntity(OrderJpaEntity entity) {
         Order order = new Order(
-                TenantId.of(entity.getEmpresaId()),
+                TenantId.of(entity.getTenantId()),
                 OrderId.of(entity.getId()),
                 AffiliateId.of(entity.getAffiliateId()),
-                OrderType.valueOf(entity.getOrderType())
+                entity.getOrderType()
         );
 
-        if (OrderStatus.valueOf(entity.getStatus()) == OrderStatus.PAID) {
+        if (entity.getStatus() == OrderStatus.PAID) {
             // Need to bypass normal logic or add all items then confirm
             // We'll add items first
             entity.getItems().forEach(item -> 
@@ -57,7 +56,7 @@ public class OrderMapper {
                 ))
             );
             order.confirmPayment();
-        } else if (OrderStatus.valueOf(entity.getStatus()) == OrderStatus.CANCELLED) {
+        } else if (entity.getStatus() == OrderStatus.CANCELLED) {
             entity.getItems().forEach(item -> 
                 order.addItem(new OrderItem(
                     ProductId.of(item.getProductId()), 

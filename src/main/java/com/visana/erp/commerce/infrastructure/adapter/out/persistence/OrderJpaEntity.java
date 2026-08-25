@@ -1,10 +1,11 @@
 package com.visana.erp.commerce.infrastructure.adapter.out.persistence;
 
+import com.visana.erp.commerce.domain.model.OrderStatus;
+import com.visana.erp.commerce.domain.model.OrderType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -17,19 +18,21 @@ public class OrderJpaEntity {
 
     @Id
     @Column(name = "id", columnDefinition = "VARCHAR(36)", updatable = false, nullable = false)
-    private String id;
+    private UUID id;
 
-    @Column(name = "empresa_id", columnDefinition = "VARCHAR(36)", nullable = false)
-    private String empresaId;
+    @Column(name = "tenant_id", columnDefinition = "VARCHAR(36)", nullable = false)
+    private UUID tenantId;
 
     @Column(name = "affiliate_id", columnDefinition = "VARCHAR(36)", nullable = false)
-    private String affiliateId;
+    private UUID affiliateId;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "order_type", nullable = false)
-    private String orderType;
+    private OrderType orderType;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
-    private String status;
+    private OrderStatus status;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItemJpaEntity> items = new ArrayList<>();

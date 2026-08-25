@@ -21,12 +21,12 @@ public class GenealogyNode {
     }
 
     public static GenealogyNode createRoot(TenantId tenantId, AffiliateId affiliateId, NetworkRole role) {
-        return new GenealogyNode(tenantId, affiliateId, null, role, NodeStatus.ACTIVO);
+        return new GenealogyNode(tenantId, affiliateId, null, role, NodeStatus.ACTIVE);
     }
 
     public static GenealogyNode create(TenantId tenantId, AffiliateId affiliateId, SponsorId sponsorId, NetworkRole role) {
         Objects.requireNonNull(sponsorId, "SponsorId cannot be null for non-root nodes");
-        return new GenealogyNode(tenantId, affiliateId, sponsorId, role, NodeStatus.INACTIVO);
+        return new GenealogyNode(tenantId, affiliateId, sponsorId, role, NodeStatus.INACTIVE);
     }
 
     public TenantId getTenantId() {
@@ -62,17 +62,17 @@ public class GenealogyNode {
     }
 
     public void activate() {
-        if (this.status == NodeStatus.ACTIVO) {
+        if (this.status == NodeStatus.ACTIVE) {
             throw new IllegalStateException("Node is already active");
         }
-        this.status = NodeStatus.ACTIVO;
+        this.status = NodeStatus.ACTIVE;
     }
     
     public void deactivate() {
-        if (this.status == NodeStatus.INACTIVO) {
+        if (this.status == NodeStatus.INACTIVE) {
             throw new IllegalStateException("Node is already inactive");
         }
-        this.status = NodeStatus.INACTIVO;
+        this.status = NodeStatus.INACTIVE;
     }
 
     private void setSponsorId(SponsorId newSponsorId) {

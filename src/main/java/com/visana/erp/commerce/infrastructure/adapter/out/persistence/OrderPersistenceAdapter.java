@@ -20,7 +20,7 @@ public class OrderPersistenceAdapter implements OrderRepository {
 
     @Override
     public Optional<Order> findById(OrderId id) {
-        return repository.findById(id.value().toString())
+        return repository.findById(id.value())
                 .map(mapper::toDomainEntity);
     }
 

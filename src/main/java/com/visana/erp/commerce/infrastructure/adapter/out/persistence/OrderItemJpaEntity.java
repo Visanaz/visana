@@ -15,14 +15,14 @@ public class OrderItemJpaEntity {
 
     @Id
     @Column(name = "id", columnDefinition = "VARCHAR(36)", updatable = false, nullable = false)
-    private String id;
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id", nullable = false)
     private OrderJpaEntity order;
 
     @Column(name = "product_id", columnDefinition = "VARCHAR(36)", nullable = false)
-    private String productId;
+    private UUID productId;
 
     @Column(name = "quantity", nullable = false)
     private int quantity;
