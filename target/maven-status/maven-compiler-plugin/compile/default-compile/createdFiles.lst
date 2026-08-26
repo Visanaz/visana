@@ -30,7 +30,6 @@ com\visana\erp\commerce\infrastructure\adapter\out\persistence\OrderMapper.class
 com\visana\erp\qualification\domain\model\LevelQualificationRule.class
 com\visana\erp\ledger\domain\model\LedgerAccountId.class
 com\visana\erp\qualification\domain\model\AffiliateMetrics.class
-com\visana\erp\core\infrastructure\adapter\in\web\error\GlobalExceptionHandler.class
 com\visana\erp\compensation\infrastructure\adapter\out\persistence\GenealogyPersistenceAdapter.class
 com\visana\erp\compensation\domain\service\UnilevelCompensationCalculatorService.class
 com\visana\erp\compensation\infrastructure\adapter\out\persistence\CommissionPlanLevelJpaEntity.class

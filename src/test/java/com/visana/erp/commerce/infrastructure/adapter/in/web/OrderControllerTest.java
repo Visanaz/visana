@@ -28,6 +28,9 @@ class OrderControllerTest {
     @MockBean
     private ConfirmOrderPaymentUseCase confirmOrderPaymentUseCase;
 
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.visana.erp.commerce.application.port.in.CreateOrderUseCase createOrderUseCase;
+
     @Test
     void shouldReturnOkWhenPaymentIsConfirmed() throws Exception {
         UUID orderId = UUID.randomUUID();

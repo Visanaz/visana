@@ -35,4 +35,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problemDetail.setType(URI.create("https://visana.com/errors/conflict-state"));
         return problemDetail;
     }
+
+    @ExceptionHandler(com.visana.erp.core.domain.exception.DomainException.class)
+    public ProblemDetail handleDomainException(com.visana.erp.core.domain.exception.DomainException ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problemDetail.setTitle("Domain Rule Violation");
+        return problemDetail;
+    }
+
+    @ExceptionHandler(com.visana.erp.network.domain.exception.NodeNotFoundException.class)
+    public ProblemDetail handleNodeNotFoundException(com.visana.erp.network.domain.exception.NodeNotFoundException ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problemDetail.setTitle("Resource Not Found");
+        return problemDetail;
+    }
 }
