@@ -55,4 +55,17 @@ public class UseCaseBeanConfig {
     public LegacyDataMigrationService legacyDataMigrationService(OrderRepository orderRepository) {
         return new LegacyDataMigrationService(orderRepository);
     }
+
+    @Bean
+    public com.visana.erp.network.application.port.in.CreateNetworkNodeUseCase createNetworkNodeUseCase(
+            com.visana.erp.network.application.port.out.NetworkNodeRepository networkNodeRepository) {
+        return new com.visana.erp.network.application.service.CreateNetworkNodeService(networkNodeRepository);
+    }
+
+    @Bean
+    public com.visana.erp.commerce.application.port.in.CreateOrderUseCase createOrderUseCase(
+            OrderRepository orderRepository,
+            com.visana.erp.network.application.port.out.NetworkNodeRepository networkNodeRepository) {
+        return new com.visana.erp.commerce.application.service.CreateOrderService(orderRepository, networkNodeRepository);
+    }
 }
