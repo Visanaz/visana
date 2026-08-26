@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.visana.erp.compensation.infrastructure.adapter.out.persistence.CommissionPersistenceAdapterTest
 -------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.989 s -- in com.visana.erp.compensation.infrastructure.adapter.out.persistence.CommissionPersistenceAdapterTest
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.269 s -- in com.visana.erp.compensation.infrastructure.adapter.out.persistence.CommissionPersistenceAdapterTest

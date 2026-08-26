@@ -33,10 +33,21 @@ public class OrderController {
 
     @PostMapping
     @Operation(summary = "Create a new order", description = "Creates a new order in PENDING status for the specified affiliate.")
-    public ResponseEntity<OrderResponse> createOrder(@RequestBody CreateOrderCommand command) {
+    public ResponseEntity<OrderResponse> createOrder(
+            @RequestBody CreateOrderRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        
+        UUID tenantId = UUID.fromString(jwt.getClaimAsString("tenant_id"));
+        CreateOrderCommand command = new CreateOrderCommand(tenantId, request.affiliateId(), request.orderType(), request.items());
         UUID orderId = createOrderUseCase.execute(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(new OrderResponse(orderId));
     }
+    
+    public record CreateOrderRequest(
+            UUID affiliateId,
+            String orderType,
+            java.util.List<com.visana.erp.commerce.application.dto.OrderItemDto> items
+    ) {}
 
     @PostMapping("/{orderId}/pay")
     @Operation(summary = "Confirm order payment", description = "Simulates payment confirmation and marks the order as PAID.")

@@ -38,8 +38,21 @@ class OrderControllerTest {
         doNothing().when(confirmOrderPaymentUseCase).execute(any(ConfirmOrderCommand.class));
 
         mockMvc.perform(post("/api/v1/orders/{orderId}/pay", orderId)
-                        .with(jwt().jwt(builder -> builder.claim("empresa_id", "tenant-123"))))
+                        .with(jwt().jwt(builder -> builder.claim("tenant_id", "11111111-1111-1111-1111-111111111111"))))
                 .andExpect(status().isOk());
+    }
+    
+    @Test
+    void shouldReturnCreatedWhenOrderIsCreated() throws Exception {
+        UUID orderId = UUID.randomUUID();
+
+        org.mockito.Mockito.when(createOrderUseCase.execute(any())).thenReturn(orderId);
+
+        mockMvc.perform(post("/api/v1/orders")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"affiliateId\":\"11111111-1111-1111-1111-111111111111\", \"orderType\":\"PURCHASE\", \"items\":[]}")
+                        .with(jwt().jwt(builder -> builder.claim("tenant_id", "11111111-1111-1111-1111-111111111111"))))
+                .andExpect(status().isCreated());
     }
     
     @Test
@@ -51,7 +64,7 @@ class OrderControllerTest {
 
         // The GlobalExceptionHandler handles IllegalArgumentException with BAD_REQUEST
         mockMvc.perform(post("/api/v1/orders/{orderId}/pay", orderId)
-                        .with(jwt().jwt(builder -> builder.claim("empresa_id", "tenant-123"))))
+                        .with(jwt().jwt(builder -> builder.claim("tenant_id", "11111111-1111-1111-1111-111111111111"))))
                 .andExpect(status().isBadRequest());
     }
     

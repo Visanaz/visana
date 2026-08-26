@@ -26,10 +26,17 @@ public class NetworkNodeController {
 
     @PostMapping
     @Operation(summary = "Create a new network node", description = "Registers a new Affiliate or Distributor in the network under a specific Sponsor (optional for roots).")
-    public ResponseEntity<NetworkNodeResponse> createNode(@RequestBody CreateNetworkNodeCommand command) {
+    public ResponseEntity<NetworkNodeResponse> createNode(
+            @RequestBody CreateNetworkNodeRequest request,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.oauth2.jwt.Jwt jwt) {
+        
+        UUID tenantId = UUID.fromString(jwt.getClaimAsString("tenant_id"));
+        CreateNetworkNodeCommand command = new CreateNetworkNodeCommand(tenantId, request.sponsorId(), request.role());
         UUID newAffiliateId = createNetworkNodeUseCase.execute(command);
         return ResponseEntity.status(HttpStatus.CREATED).body(new NetworkNodeResponse(newAffiliateId));
     }
+
+    public record CreateNetworkNodeRequest(UUID sponsorId, String role) {}
 
     public record NetworkNodeResponse(UUID affiliateId) {}
 }
