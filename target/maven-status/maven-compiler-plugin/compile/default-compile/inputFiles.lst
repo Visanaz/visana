@@ -58,7 +58,6 @@ D:\devs\Api_Visana\src\main\java\com\visana\erp\core\domain\model\TenantId.java
 D:\devs\Api_Visana\src\main\java\com\visana\erp\core\infrastructure\adapter\in\web\exception\GlobalExceptionHandler.java
 D:\devs\Api_Visana\src\main\java\com\visana\erp\core\infrastructure\config\security\KeycloakJwtAuthenticationConverter.java
 D:\devs\Api_Visana\src\main\java\com\visana\erp\core\infrastructure\config\security\SecurityConfig.java
-D:\devs\Api_Visana\src\main\java\com\visana\erp\core\infrastructure\config\SecurityConfig.java
 D:\devs\Api_Visana\src\main\java\com\visana\erp\core\infrastructure\config\UseCaseBeanConfig.java
 D:\devs\Api_Visana\src\main\java\com\visana\erp\ledger\domain\model\InsufficientFundsException.java
 D:\devs\Api_Visana\src\main\java\com\visana\erp\ledger\domain\model\LedgerAccount.java
