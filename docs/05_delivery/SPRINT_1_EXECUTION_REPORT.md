@@ -19,6 +19,8 @@
 
 El baseline era 104 pruebas verdes. Tras añadir la prueba de sanitización de auditoría: 105 pruebas, 0 failures, 0 errors y 0 skipped mediante Maven Wrapper con JDK 21.
 
+**Estado posterior Sprint 1A:** `FOUNDATION_MERGED`. Sprint 1B agrega validación PostgreSQL/Testcontainers y se reporta por separado en `SPRINT_1B_VALIDATION_REPORT.md`.
+
 ## Exclusiones confirmadas
 
 No se modificaron compensación, activación, team sales, pools, nivel 8, ledger, settlement, payout, impuestos, proveedor de pago, frontend, migración productiva ni Decision Gates. No se retiraron los binarios históricos bajo `target/`.
