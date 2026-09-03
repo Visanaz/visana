@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-visana_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-visana}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - visana_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  visana_postgres_data:
