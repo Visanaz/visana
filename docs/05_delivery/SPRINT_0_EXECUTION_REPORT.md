@@ -51,3 +51,9 @@ Quedan abiertos: provisión y pruebas con PostgreSQL, decisiones de identidad/ro
 - Backlog, roadmap, ADR y matrices previos: `docs/01_audit` a `docs/06_quality`.
 - Estado resumido de Sprint 0: `docs/05_delivery/SPRINT_0.md`.
 - Ejecución reproducible local: Maven Wrapper, JDK 21 y las variables documentadas en `.env.example`.
+
+## Consolidación Git — Master Prompt 05
+
+La identidad Git se configuró únicamente en este repositorio para `Visanaz`. Sprint 0 quedó consolidado en commits locales de build/foundation, seguridad/API, observabilidad, CI y documentación. Las ramas locales `main`, `dev` y `qa` parten del baseline `5f241fe`; Sprint 0 permanece aislado en `feat/plan3-sprint0-foundation`.
+
+El acceso remoto está bloqueado como `BLOCKED_GITHUB_AUTHENTICATION`: GitHub CLI no está instalado y Git Credential Manager no expone una sesión de `Visanaz`. No se usó otra cuenta, no se intentó crear o configurar el repositorio remoto, no hubo push, PR ni merge. Por esa dependencia, `dev` no contiene Sprint 0 y Sprint 1 no se inicia.
