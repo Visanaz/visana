@@ -36,9 +36,6 @@ class OrderControllerTest {
     private ConfirmOrderPaymentUseCase confirmOrderPaymentUseCase;
 
     @org.springframework.boot.test.mock.mockito.MockBean
-    private com.visana.erp.commerce.application.port.in.CreateOrderUseCase createOrderUseCase;
-
-    @org.springframework.boot.test.mock.mockito.MockBean
     private KeycloakAuthenticatedPrincipalAdapter principalAdapter;
 
     @org.springframework.boot.test.mock.mockito.MockBean
@@ -65,19 +62,6 @@ class OrderControllerTest {
         mockMvc.perform(post("/api/v1/orders/{orderId}/pay", orderId)
                         .with(jwt().jwt(builder -> builder.claim("tenant_id", "11111111-1111-1111-1111-111111111111"))))
                 .andExpect(status().isOk());
-    }
-    
-    @Test
-    void shouldReturnCreatedWhenOrderIsCreated() throws Exception {
-        UUID orderId = UUID.randomUUID();
-
-        org.mockito.Mockito.when(createOrderUseCase.execute(any())).thenReturn(orderId);
-
-        mockMvc.perform(post("/api/v1/orders")
-                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"affiliateId\":\"11111111-1111-1111-1111-111111111111\", \"orderType\":\"PURCHASE\", \"items\":[]}")
-                        .with(jwt().jwt(builder -> builder.claim("tenant_id", "11111111-1111-1111-1111-111111111111"))))
-                .andExpect(status().isCreated());
     }
     
     @Test

@@ -50,3 +50,10 @@ Esta evidencia reduce parcialmente GAP-024 para la foundation técnica. No cierr
 | Identidad interna | Platform Actor UUID y enlace OIDC único por provider/issuer/subject; PostgreSQL/Testcontainers valida V3 | No define perfiles de negocio ni provisioning público |
 | Ownership | Persistencia explícita y policy owner/foreign-owner fail-closed; confirmación de pago bloqueada antes del use case cuando no hay ownership | Órdenes legacy siguen sin actor ownership demostrable |
 | Seguridad | `/api/v1/me` seguro, 401 por seguridad existente, 403 para identidad sin link u ownership ausente; métricas y auditoría sin PII | No hay matriz de roles ni override administrativo evidenciado |
+
+## Evidencia añadida — Sprint 3
+
+| Área | Evidencia nueva | Estado y límite |
+|---|---|---|
+| Comercio Plan 3 | Pruebas unitarias verifican precio/total server-side y producto inactivo; web tests cubren identidad no vinculada, creación vinculada y lectura foránea | No acredita proveedor de pago, impuestos, descuento, envío ni idempotencia de reintentos |
+| Ownership de orden nueva | `owner_actor_id` y `resource_ownerships` se asignan en transacción de creación; lista filtra por owner | Órdenes V1 continúan `LEGACY_ORDER_OWNERSHIP_UNRESOLVED` |

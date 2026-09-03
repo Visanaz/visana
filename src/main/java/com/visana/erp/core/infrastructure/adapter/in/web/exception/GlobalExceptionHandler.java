@@ -4,6 +4,7 @@ import com.visana.erp.ledger.domain.model.InsufficientFundsException;
 import com.visana.erp.platform.application.identity.IdentityConflictException;
 import com.visana.erp.platform.application.identity.UnlinkedIdentityException;
 import com.visana.erp.platform.application.ownership.OwnershipDeniedException;
+import com.visana.erp.commerce.order.application.OwnedOrderNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -62,6 +63,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problemDetail.setTitle("Identity Conflict");
         problemDetail.setType(URI.create("https://visana.com/errors/identity-conflict"));
+        return withCorrelation(problemDetail);
+    }
+
+    @ExceptionHandler(OwnedOrderNotFoundException.class)
+    public ProblemDetail handleOwnedOrderNotFound(OwnedOrderNotFoundException ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        problemDetail.setTitle("Resource Not Found");
+        problemDetail.setType(URI.create("https://visana.com/errors/not-found"));
         return withCorrelation(problemDetail);
     }
 
