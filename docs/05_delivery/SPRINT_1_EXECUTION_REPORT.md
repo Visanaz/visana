@@ -1,6 +1,6 @@
 # Informe de ejecución — Plan 3, Sprint 1 Core Platform
 
-**Rama:** `feat/plan3-sprint1-core-platform`  
+**Rama:** `feat/plan3-sprint1-core-platform`
 **Base:** `50254723ce816b626a0e4f9533b79c7f29ddf494` (`dev`)
 
 ## Alcance ejecutado
