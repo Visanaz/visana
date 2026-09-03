@@ -1,0 +1,5 @@
+# Generated build output. Historical tracked artifacts remain untouched until an approved cleanup.
+target/
+.env
+.idea/
+*.iml
