@@ -1,9 +1,11 @@
 package com.visana.erp.platform.infrastructure.adapter.out.persistence;
 
 import com.visana.erp.platform.domain.audit.AuditEvent;
+import com.visana.erp.network.application.port.out.NetworkNodeRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -36,6 +38,7 @@ class PostgreSqlAuditEventIntegrationTest {
     @Autowired private PersistentAuditEventWriter writer;
     @Autowired private AuditEventSpringDataRepository repository;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @MockBean private NetworkNodeRepository networkNodeRepository;
 
     @Test
     void appliesFlywayMigrationsAndPersistsSanitizedAuditEvent() {
