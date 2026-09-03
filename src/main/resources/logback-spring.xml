@@ -1,0 +1,11 @@
+<configuration>
+    <property name="CONSOLE_PATTERN" value="timestamp=%d{ISO8601} level=%-5level service=${springAppName:-api-multinivel} correlationId=%X{correlationId:-none} logger=%logger{36} message=%msg%n"/>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${CONSOLE_PATTERN}</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
