@@ -47,4 +47,11 @@ public class AuditEventJpaEntity {
     String metadata() {
         return metadata;
     }
+
+    String actorId() { return actorId; }
+    String action() { return action; }
+    String resourceType() { return resourceType; }
+    String resourceId() { return resourceId; }
+    Instant occurredAt() { return occurredAt; }
+    String correlationId() { return correlationId; }
 }

@@ -1,6 +1,6 @@
 # Sprint 1B — Core Platform Validation
 
-**Base:** `5a0c63a` (`dev`, Sprint 1A merged)  
+**Base:** `5a0c63a` (`dev`, Sprint 1A merged)
 **Rama:** `test/plan3-sprint1b-core-validation`
 
 ## Evidencia local
