@@ -1,0 +1,2 @@
+# ADR-006 Ledger State Machine
+**Propuesta:** modelar estados/eventos/actor formalmente, separando calculated, approval, payable y paid. **Contexto:** Java tiene CALCULATED/REVERSED y PHP evidencia pending/approved/paid parcial. **Decisión:** no adoptar nombres finales aún; diseñar transición autorizada, timestamp y correlación. **Consecuencia:** DG-04/DG-05 deben fijar semántica antes de implementar.

@@ -6,18 +6,28 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import com.visana.erp.core.infrastructure.adapter.in.web.filter.CorrelationIdFilter;
+import org.slf4j.MDC;
 
 import java.net.URI;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
+    private ProblemDetail withCorrelation(ProblemDetail problemDetail) {
+        String correlationId = MDC.get(CorrelationIdFilter.MDC_KEY);
+        if (correlationId != null) {
+            problemDetail.setProperty("correlationId", correlationId);
+        }
+        return problemDetail;
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ProblemDetail handleIllegalArgumentException(IllegalArgumentException ex) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problemDetail.setTitle("Bad Request");
         problemDetail.setType(URI.create("https://visana.com/errors/bad-request"));
-        return problemDetail;
+        return withCorrelation(problemDetail);
     }
 
     @ExceptionHandler(InsufficientFundsException.class)
@@ -25,7 +35,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
         problemDetail.setTitle("Insufficient Funds");
         problemDetail.setType(URI.create("https://visana.com/errors/insufficient-funds"));
-        return problemDetail;
+        return withCorrelation(problemDetail);
     }
     
     @ExceptionHandler(IllegalStateException.class)
@@ -33,20 +43,30 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problemDetail.setTitle("Conflict in State");
         problemDetail.setType(URI.create("https://visana.com/errors/conflict-state"));
-        return problemDetail;
+        return withCorrelation(problemDetail);
     }
 
     @ExceptionHandler(com.visana.erp.core.domain.exception.DomainException.class)
     public ProblemDetail handleDomainException(com.visana.erp.core.domain.exception.DomainException ex) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problemDetail.setTitle("Domain Rule Violation");
-        return problemDetail;
+        return withCorrelation(problemDetail);
     }
 
     @ExceptionHandler(com.visana.erp.network.domain.exception.NodeNotFoundException.class)
     public ProblemDetail handleNodeNotFoundException(com.visana.erp.network.domain.exception.NodeNotFoundException ex) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         problemDetail.setTitle("Resource Not Found");
-        return problemDetail;
+        return withCorrelation(problemDetail);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleUnexpectedException(Exception ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "An unexpected error occurred. Use the correlation ID for support.");
+        problemDetail.setTitle("Internal Server Error");
+        problemDetail.setType(URI.create("https://visana.com/errors/internal-error"));
+        return withCorrelation(problemDetail);
     }
 }

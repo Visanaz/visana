@@ -1,0 +1,2 @@
+# ADR-004 Genealogy Storage
+**Propuesta:** evaluar closure table como representación principal, con sponsor separado y snapshots de cálculo. **Alternativas:** materialized path simplifica lectura prefija; CTE recursivos reducen materialización pero cargan consultas variables. **Razón:** consultas ancestor/descendant/depth y cálculo repetible favorecen cierre explícito, sujeto a prueba de volumen real. **Consecuencia:** no se asume equivalencia con `user_genealogy` legado; decisión física final depende de cardinalidad y DG-03.

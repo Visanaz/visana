@@ -1,0 +1,2 @@
+# ADR-007 Inmutabilidad y reversos
+**Propuesta:** historia financiera append-oriented y reversas compensatorias. **Contexto:** `Commission.reverse()` ya expresa objeto opuesto, pero no cubre efectos derivados. **Decisión:** no borrar ni actualizar silenciosamente entradas financieras. **Consecuencia:** reversal/void/refund deben enlazar origen, volumen, calificación, ledger, payout y reporte; DG-10 sigue abierto.

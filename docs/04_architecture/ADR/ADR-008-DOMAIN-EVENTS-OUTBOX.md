@@ -1,0 +1,2 @@
+# ADR-008 Eventos y Outbox
+**Propuesta:** eventos de dominio in-process dentro del monolito; transactional outbox sólo para integración externa o entrega confiable requerida. **Contexto:** `OrderPaidEvent` actual es local y no demuestra atomicidad ni gateway. **Consecuencia:** no introducir broker prematuro; definir idempotencia, correlación y política de reintento antes de provider/notificaciones.
