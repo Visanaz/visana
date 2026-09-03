@@ -1,0 +1,3 @@
+package com.visana.erp.network.foundation.infrastructure.persistence;
+import jakarta.persistence.*; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name="sponsor_relationships") public class SponsorRelationshipJpaEntity { @Id UUID id; @Column(name="sponsor_member_id") UUID sponsorId; @Column(name="member_id") UUID memberId; @Column(name="effective_from") Instant effectiveFrom; String status; @Column(name="created_at") Instant createdAt; protected SponsorRelationshipJpaEntity(){} public SponsorRelationshipJpaEntity(UUID id,UUID sponsor,UUID member,Instant now){this.id=id;sponsorId=sponsor;memberId=member;effectiveFrom=now;status="ACTIVE";createdAt=now;} }

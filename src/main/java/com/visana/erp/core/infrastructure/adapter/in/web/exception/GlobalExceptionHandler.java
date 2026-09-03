@@ -5,6 +5,7 @@ import com.visana.erp.platform.application.identity.IdentityConflictException;
 import com.visana.erp.platform.application.identity.UnlinkedIdentityException;
 import com.visana.erp.platform.application.ownership.OwnershipDeniedException;
 import com.visana.erp.commerce.order.application.OwnedOrderNotFoundException;
+import com.visana.erp.network.foundation.application.NetworkOperationForbiddenException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -50,7 +51,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return withCorrelation(problemDetail);
     }
 
-    @ExceptionHandler({UnlinkedIdentityException.class, OwnershipDeniedException.class})
+    @ExceptionHandler({UnlinkedIdentityException.class, OwnershipDeniedException.class, NetworkOperationForbiddenException.class})
     public ProblemDetail handleForbidden(RuntimeException ex) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
         problemDetail.setTitle("Forbidden");
