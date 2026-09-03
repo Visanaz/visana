@@ -42,3 +42,11 @@
 | Runtime local | Docker Compose y PostgreSQL local están disponibles; Testcontainers local fue bloqueado por el proveedor Npipe | `BLOCKED_LOCAL_TESTCONTAINERS`; CI provee la evidencia aislada de contenedor |
 
 Esta evidencia reduce parcialmente GAP-024 para la foundation técnica. No cierra los GAP P0 de negocio ni cambia las coberturas requeridas de la tabla principal.
+
+## Evidencia añadida — Sprint 2
+
+| Área | Evidencia nueva | Estado y límite |
+|---|---|---|
+| Identidad interna | Platform Actor UUID y enlace OIDC único por provider/issuer/subject; PostgreSQL/Testcontainers valida V3 | No define perfiles de negocio ni provisioning público |
+| Ownership | Persistencia explícita y policy owner/foreign-owner fail-closed; confirmación de pago bloqueada antes del use case cuando no hay ownership | Órdenes legacy siguen sin actor ownership demostrable |
+| Seguridad | `/api/v1/me` seguro, 401 por seguridad existente, 403 para identidad sin link u ownership ausente; métricas y auditoría sin PII | No hay matriz de roles ni override administrativo evidenciado |
