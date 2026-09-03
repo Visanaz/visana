@@ -32,3 +32,13 @@
 | Pools, consistencia, premio, rango, tax, shipping | No | No demostrado | No | Si |
 
 **Criterio:** una prueba unitaria con mocks no acredita proveedor real, persistencia, contrato, integracion o resultado runtime. Las pruebas requeridas se definen como condicion futura de cierre, no se crean en esta fase.
+
+## Evidencia añadida — Sprint 1B
+
+| Área | Evidencia nueva | Estado y límite |
+|---|---|---|
+| Foundation PostgreSQL | `PostgreSqlAuditEventIntegrationTest` ejecutó en GitHub Actions contra `postgres:16-alpine`; Flyway aplicó V1 y V2 y JPA persistió/recuperó un evento audit sanitizado | PASS de integración técnica; no acredita reglas financieras ni migración de datos legacy |
+| Autorización foundation | `FailClosedAccessPolicyTest` verifica que contexto ausente o decisión denegada no autoriza implícitamente | PASS aislado; GAP-014..016 siguen abiertos porque falta mapping actor/rol/recurso evidenciado |
+| Runtime local | Docker Compose y PostgreSQL local están disponibles; Testcontainers local fue bloqueado por el proveedor Npipe | `BLOCKED_LOCAL_TESTCONTAINERS`; CI provee la evidencia aislada de contenedor |
+
+Esta evidencia reduce parcialmente GAP-024 para la foundation técnica. No cierra los GAP P0 de negocio ni cambia las coberturas requeridas de la tabla principal.

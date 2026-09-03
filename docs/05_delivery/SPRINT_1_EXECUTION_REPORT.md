@@ -19,7 +19,7 @@
 
 El baseline era 104 pruebas verdes. Tras añadir la prueba de sanitización de auditoría: 105 pruebas, 0 failures, 0 errors y 0 skipped mediante Maven Wrapper con JDK 21.
 
-**Estado posterior Sprint 1A:** `FOUNDATION_MERGED`. Sprint 1B agrega validación PostgreSQL/Testcontainers y se reporta por separado en `SPRINT_1B_VALIDATION_REPORT.md`.
+**Estado posterior Sprint 1A:** `FOUNDATION_MERGED`. **Estado de validación Sprint 1B:** `VALIDATION_COMPLETED`: CI ejecutó PostgreSQL/Testcontainers, Flyway V1/V2 y persistencia de auditoría con 109 pruebas verdes. La validación se detalla en `SPRINT_1B_VALIDATION_REPORT.md`; su PR a `dev` permanece abierto, pendiente de revisión PM y sin merge.
 
 ## Exclusiones confirmadas
 
