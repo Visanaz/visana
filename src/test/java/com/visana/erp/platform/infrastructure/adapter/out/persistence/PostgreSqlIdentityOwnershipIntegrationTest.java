@@ -90,8 +90,7 @@ class PostgreSqlIdentityOwnershipIntegrationTest {
     @SpringBootConfiguration
     @EnableAutoConfiguration
     @EntityScan(basePackageClasses = {AuditEventJpaEntity.class, PlatformActorJpaEntity.class, ExternalIdentityLinkJpaEntity.class, ResourceOwnershipJpaEntity.class})
-    @EnableJpaRepositories(basePackageClasses = {AuditEventSpringDataRepository.class, PlatformActorSpringDataRepository.class,
-            ExternalIdentityLinkSpringDataRepository.class, ResourceOwnershipSpringDataRepository.class})
+    @EnableJpaRepositories(basePackageClasses = {AuditEventSpringDataRepository.class, PlatformActorSpringDataRepository.class})
     @Import({PersistentAuditEventWriter.class, IdentityPersistenceAdapter.class, ResourceOwnershipPersistenceAdapter.class,
             IdentityResolutionMetrics.class, com.visana.erp.platform.application.identity.ActorResolverService.class,
             IdentityProvisioningService.class, ResourceOwnershipService.class, PersistentOwnershipAuthorizationPolicy.class})
