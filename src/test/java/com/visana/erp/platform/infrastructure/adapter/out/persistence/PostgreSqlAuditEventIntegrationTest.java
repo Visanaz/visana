@@ -1,11 +1,14 @@
 package com.visana.erp.platform.infrastructure.adapter.out.persistence;
 
 import com.visana.erp.platform.domain.audit.AuditEvent;
-import com.visana.erp.network.application.port.out.NetworkNodeRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -20,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
+@SpringBootTest(classes = PostgreSqlAuditEventIntegrationTest.AuditPersistenceTestApplication.class)
 @Testcontainers(disabledWithoutDocker = true)
 class PostgreSqlAuditEventIntegrationTest {
     @Container
@@ -38,7 +41,6 @@ class PostgreSqlAuditEventIntegrationTest {
     @Autowired private PersistentAuditEventWriter writer;
     @Autowired private AuditEventSpringDataRepository repository;
     @Autowired private JdbcTemplate jdbcTemplate;
-    @MockBean private NetworkNodeRepository networkNodeRepository;
 
     @Test
     void appliesFlywayMigrationsAndPersistsSanitizedAuditEvent() {
@@ -57,4 +59,11 @@ class PostgreSqlAuditEventIntegrationTest {
         assertTrue(persisted.metadata().contains("allowed"));
         assertFalse(persisted.metadata().contains("discard"));
     }
+
+    @SpringBootConfiguration
+    @EnableAutoConfiguration
+    @EntityScan(basePackageClasses = AuditEventJpaEntity.class)
+    @EnableJpaRepositories(basePackageClasses = AuditEventSpringDataRepository.class)
+    @Import(PersistentAuditEventWriter.class)
+    static class AuditPersistenceTestApplication { }
 }
