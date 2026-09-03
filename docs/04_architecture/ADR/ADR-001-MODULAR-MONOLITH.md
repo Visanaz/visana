@@ -1,0 +1,2 @@
+# ADR-001 Modular Monolith
+**Propuesta:** monolito modular con límites explícitos. **Contexto:** P0 financiero y 12 fuentes faltantes; microservicios añadirían integración antes de estabilizar reglas. **Decisión:** adoptar módulos y puertos/adapters; evaluar Spring Modulith después, sin adoptarlo ahora. **Consecuencia:** despliegue/costo simple y futura extracción condicionada a pruebas de límites.

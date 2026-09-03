@@ -1,0 +1,2 @@
+# ADR-002 PostgreSQL vs MySQL
+**Propuesta:** PostgreSQL/Cloud SQL como destino Plan 3, no migración inmediata. **Contexto:** MySQL 8 declarado y dump MariaDB legado; red, constraints, periodos y conciliación requieren modelo nuevo. **Razones:** CTE recursivos, integridad/transacciones, JSONB cuando aplique y operación gestionada. **Consecuencia:** GAP-019 exige mapping, staging y conciliación aprobados; no se reutiliza SQL legado sin validación.

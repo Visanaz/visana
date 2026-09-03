@@ -1,0 +1,2 @@
+# ADR-003 Identity Provider
+**Propuesta:** conservar Keycloak inicialmente y endurecerlo; reevaluar Identity Platform/Firebase Auth antes de una migración. **Evidencia:** Java ya consume JWT/roles Keycloak; no existe evidencia de usuarios/claims migrables ni decisión de VISANA. **Comparación:** ambos permiten tokens/roles o claims; Keycloak minimiza cambio inicial, Identity Platform puede reducir operación gestionada pero introduce migración/lock-in. **Consecuencia:** DG-14 queda abierto; ownership se resuelve en aplicación, no sólo en claims.

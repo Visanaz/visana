@@ -1,0 +1,2 @@
+# ADR-005 Versionado de reglas
+**Propuesta:** plan, versión, regla, vigencia y resultado aplicado inmutables por venta. **Contexto:** plan base/override SQL y Java no tienen precedencia demostrable. **Decisión:** resolver explícito default→rol→eligibilidad→base, sin elegir porcentajes abiertos. **Consecuencia:** venta histórica conserva `planVersionId`, `ruleId`, base, porcentaje y beneficiario; DG-02/DG-09 bloquean configuración concreta.
