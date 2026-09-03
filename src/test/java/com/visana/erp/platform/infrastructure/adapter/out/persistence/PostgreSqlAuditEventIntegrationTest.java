@@ -47,7 +47,8 @@ class PostgreSqlAuditEventIntegrationTest {
         assertEquals(1, jdbcTemplate.queryForObject("select count(*) from flyway_schema_history where version = '1'", Integer.class));
         assertEquals(1, jdbcTemplate.queryForObject("select count(*) from flyway_schema_history where version = '2'", Integer.class));
 
-        writer.append(new AuditEvent("actor", "ORDER_ACCESS", "ORDER", "resource", Instant.parse("2026-09-03T00:00:00Z"),
+        Instant occurredAt = Instant.parse("2026-09-03T00:00:00Z");
+        writer.append(new AuditEvent("actor", "ORDER_ACCESS", "ORDER", "resource", occurredAt,
                 "correlation", Map.of("result", "allowed", "token", "discard")));
 
         AuditEventJpaEntity persisted = repository.findAll().getFirst();
@@ -55,6 +56,7 @@ class PostgreSqlAuditEventIntegrationTest {
         assertEquals("ORDER_ACCESS", persisted.action());
         assertEquals("ORDER", persisted.resourceType());
         assertEquals("resource", persisted.resourceId());
+        assertEquals(occurredAt, persisted.occurredAt());
         assertEquals("correlation", persisted.correlationId());
         assertTrue(persisted.metadata().contains("allowed"));
         assertFalse(persisted.metadata().contains("discard"));
