@@ -18,4 +18,8 @@ Para preservar los artefactos históricos versionados bajo `target/`, una verifi
 
 ## Perfiles y datos
 
-Los perfiles `local`, `test`, `dev`, `qa` y `prod` son el objetivo de configuración de Sprint 1. No están todos implementados aún. MySQL se conserva como fuente legacy; PostgreSQL target, Compose y Testcontainers requieren la foundation autorizada de Sprint 1 y no se infieren en este documento.
+Los perfiles `local`, `test`, `dev`, `qa` y `prod` están definidos para separar configuración. MySQL se conserva como fuente legacy; PostgreSQL es el target de Plan 3 y no implica migración productiva.
+
+## PostgreSQL local (Sprint 1)
+
+Usar `docker compose -f compose.postgres.yml up -d` para una instancia PostgreSQL local aislada. Los valores de `.env.example` son placeholders seguros. Las credenciales de DEV, QA y producción permanecen externas al repositorio. Las pruebas específicas de PostgreSQL deben usar Testcontainers, no H2.
