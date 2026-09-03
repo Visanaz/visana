@@ -21,5 +21,7 @@ Este registro consolida decisiones de negocio y de control que bloquean la evalu
 | DG-15 | Payment provider y contrato de confirmacion | SIGUE_ABIERTO | Java solo simula pago; no hay gateway/webhook | Confirmacion financiera, idempotencia y conciliacion. |
 | DG-16 | Fuente frontend o alcance de Angular nuevo | SIGUE_ABIERTO | No hay frontend source en el clon | Contratos API, UX y plan de entrega. |
 | DG-17 | Cardinalidad Platform Actor a perfiles de negocio | SIGUE_ABIERTO | Sprint 2 introduce actor técnico separado; no existe fuente que relacione actor con Customer/Affiliate/Distributor | Ownership y provisioning de perfiles no pueden inferirse. |
+| DG-18 | Política de cambio de patrocinador | SIGUE_ABIERTO | Sprint 4 rechaza re-parenting de forma segura; el plan no define excepción, historia ni efecto financiero | Genealogía, volumen histórico y futuras compensaciones no determinables. |
+| DG-19 | Autoridad de provisioning de afiliación | SIGUE_ABIERTO | El plan habla de afiliación, pero no define el evento/actor que la crea; endpoint heredado quedó bloqueado | Afiliación, sponsorship y acceso no pueden habilitarse de forma controlada. |
 
 **Condicion para cerrar un gate:** regla de negocio aprobada por VISANA, fuente de verdad identificada, efectos de datos/finanzas definidos y criterios de prueba acordados. El cierre no se infiere de una semilla SQL, documento o binario aislado.
