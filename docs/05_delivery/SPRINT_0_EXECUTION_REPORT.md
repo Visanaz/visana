@@ -52,8 +52,10 @@ Quedan abiertos: provisión y pruebas con PostgreSQL, decisiones de identidad/ro
 - Estado resumido de Sprint 0: `docs/05_delivery/SPRINT_0.md`.
 - Ejecución reproducible local: Maven Wrapper, JDK 21 y las variables documentadas en `.env.example`.
 
-## Consolidación Git — Master Prompt 05
+## Consolidación Git — Master Prompts 05 y 05A
 
-La identidad Git se configuró únicamente en este repositorio para `Visanaz`. Sprint 0 quedó consolidado en commits locales de build/foundation, seguridad/API, observabilidad, CI y documentación. Las ramas locales `main`, `dev` y `qa` parten del baseline `5f241fe`; Sprint 0 permanece aislado en `feat/plan3-sprint0-foundation`.
+La identidad Git se configuró únicamente en este repositorio para `Visanaz`. Sprint 0 quedó consolidado en commits locales de build/foundation, seguridad/API, observabilidad, CI y documentación. El repositorio privado `Visanaz/visana` se creó vacío, se configuró como `origin` y el remoto histórico se preservó como `upstream`.
 
-El acceso remoto está bloqueado como `BLOCKED_GITHUB_AUTHENTICATION`: GitHub CLI no está instalado y Git Credential Manager no expone una sesión de `Visanaz`. El remoto histórico del proveedor se preservó localmente como `upstream`; no existe un nuevo `origin` hasta poder verificar el repositorio oficial. No se usó otra cuenta, no hubo push, PR ni merge. Por esa dependencia, `dev` no contiene Sprint 0 y Sprint 1 no se inicia.
+Las ramas `main`, `qa` y `dev` se publicaron desde el baseline `5f241fe`. El Pull Request [#1](https://github.com/Visanaz/visana/pull/1) de `feat/plan3-sprint0-foundation` a `dev` pasó el workflow `build` y se integró por squash como `bcd3307`. `main` y `qa` no recibieron Sprint 0. El wrapper requirió un ajuste posterior de permiso ejecutable para Linux, validado por CI antes del merge.
+
+Las protecciones de rama se intentaron para `main`, `qa` y `dev`, pero la plataforma respondió `BRANCH_PROTECTION_NOT_AVAILABLE` para este repositorio privado y plan actual. La política manual de PR, CI, no force-push y no borrado permanece documentada. No se inició Sprint 1.
