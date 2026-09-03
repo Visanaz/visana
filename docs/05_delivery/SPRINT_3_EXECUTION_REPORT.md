@@ -19,3 +19,5 @@ No frontend/POS, impuesto, envío, descuento, gateway/webhook, pago, reverso, le
 ## Evidencia de validación
 
 `mvnw.cmd --batch-mode -Dvisana.build.directory=C:/Users/Kmilo/AppData/Local/Temp/visana-sprint3-final clean verify` terminó con 119 pruebas, 0 fallos, 0 errores y 3 omitidas. Las omisiones son las tres pruebas PostgreSQL/Testcontainers, incluida `PostgreSqlOwnedCommerceIntegrationTest`, por `WINDOWS_TESTCONTAINERS_NPIPE`; CI queda como evidencia autoritativa de esa capa.
+
+GitHub Actions run `33718384087` aprobó `clean verify` en 54 segundos sobre el PR #6. La capa PostgreSQL ejecutó las tres pruebas Testcontainers sin omisiones, incluida la secuencia sintética de comercio Sprint 3. Las anotaciones del runner son avisos externos de deprecación para `actions/checkout@v4` y `actions/setup-java@v4`; no son fallos del build ni de la aplicación.
