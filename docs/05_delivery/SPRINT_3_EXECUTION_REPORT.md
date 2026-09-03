@@ -2,7 +2,7 @@
 
 **Base:** `8067451` (`dev`, Sprint 2 squash merge)
 **Branch:** `feat/plan3-sprint3-commerce-orders`
-**Estado:** IMPLEMENTADO_LOCALMENTE — NO_MERGED
+**Estado:** DONE — squash merged into `dev` as `69c0dc6` on 2026-09-03.
 
 ## Entregado
 

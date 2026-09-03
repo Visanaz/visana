@@ -1,0 +1,3 @@
+package com.visana.erp.network.foundation.infrastructure.persistence;
+import jakarta.persistence.*; import java.time.Instant; import java.util.UUID;
+@Entity @Table(name="business_profiles") public class BusinessProfileJpaEntity { @Id UUID id; @Column(name="profile_type") String profileType; @Column(name="record_status") String status; @Column(name="created_by_actor_id") @org.hibernate.annotations.JdbcTypeCode(java.sql.Types.VARCHAR) UUID createdByActorId; @Column(name="created_at") Instant createdAt; protected BusinessProfileJpaEntity(){} public BusinessProfileJpaEntity(UUID id,UUID actor,Instant now){this.id=id;profileType="NETWORK_MEMBER";status="RECORD_ACTIVE";createdByActorId=actor;createdAt=now;} }

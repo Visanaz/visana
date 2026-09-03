@@ -2,6 +2,7 @@ package com.visana.erp.network.infrastructure.adapter.in.web;
 
 import com.visana.erp.network.application.port.in.CreateNetworkNodeCommand;
 import com.visana.erp.network.application.port.in.CreateNetworkNodeUseCase;
+import com.visana.erp.network.foundation.application.NetworkOperationForbiddenException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
@@ -30,10 +31,11 @@ public class NetworkNodeController {
             @RequestBody CreateNetworkNodeRequest request,
             @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.oauth2.jwt.Jwt jwt) {
         
-        UUID tenantId = UUID.fromString(jwt.getClaimAsString("tenant_id"));
+        throw new NetworkOperationForbiddenException("legacy network-node creation is blocked until affiliation controls are approved");
+        /* UUID tenantId = UUID.fromString(jwt.getClaimAsString("tenant_id"));
         CreateNetworkNodeCommand command = new CreateNetworkNodeCommand(tenantId, request.sponsorId(), request.role());
         UUID newAffiliateId = createNetworkNodeUseCase.execute(command);
-        return ResponseEntity.status(HttpStatus.CREATED).body(new NetworkNodeResponse(newAffiliateId));
+        return ResponseEntity.status(HttpStatus.CREATED).body(new NetworkNodeResponse(newAffiliateId)); */
     }
 
     public record CreateNetworkNodeRequest(UUID sponsorId, String role) {}
