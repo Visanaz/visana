@@ -1,7 +1,7 @@
 # VISANA Plan 3 - Project Charter de auditoria
 
-**Fecha de baseline:** 2026-09-02  
-**Modo:** auditoria read-only; se autorizaron exclusivamente los documentos de gobierno y auditoria bajo `docs/`.  
+**Fecha de baseline:** 2026-09-02
+**Modo:** auditoria read-only; se autorizaron exclusivamente los documentos de gobierno y auditoria bajo `docs/`.
 **Unidad auditada:** clon `C:\visana_auditoria\visana`.
 
 ## Proposito

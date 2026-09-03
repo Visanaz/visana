@@ -46,7 +46,7 @@ Para un ancestro `a` en posicion `n` de la lista upline, Java genera una `Commis
 
 ## Preguntas transversales
 
-Q-COMP-004: ¿el total usado por Java equivale a venta bruta, neta, IVA excluido o volumen calificable?  
-Q-COMP-005: ¿un usuario puede recibir simultaneamente Unilevel, premio 1%, pool y bono de consistencia sobre el mismo evento?  
-Q-LEDGER-001: ¿que evento autoriza `CALCULATED` a convertirse en saldo liquidable y despues pagado?  
+Q-COMP-004: ¿el total usado por Java equivale a venta bruta, neta, IVA excluido o volumen calificable?
+Q-COMP-005: ¿un usuario puede recibir simultaneamente Unilevel, premio 1%, pool y bono de consistencia sobre el mismo evento?
+Q-LEDGER-001: ¿que evento autoriza `CALCULATED` a convertirse en saldo liquidable y despues pagado?
 Q-VOL-001: ¿que tipos de venta incrementan volumen personal/equipo y en que periodo?

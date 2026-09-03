@@ -1,6 +1,6 @@
 # Plan 3 frente a Java actual y auditoria PHP historica
 
-**Iteracion:** Master Prompt 02, 2026-09-02.  
+**Iteracion:** Master Prompt 02, 2026-09-02.
 **Regla de lectura:** SRC-001 (Java HEAD `5f241fe`) determina lo mantenible; SRC-004 (PHP/CodeIgniter) es continuidad historica, no una especificacion ni implementacion Java; SRC-005 solo demuestra componente historico. No se ejecutaron aplicaciones, pruebas, migraciones ni integraciones.
 
 ## Resumen de disposiciones recomendadas

@@ -1,7 +1,7 @@
 # Plan de compensacion - catalogo formal de fuentes
 
-**Iteracion:** Master Prompt 01, 2026-09-02  
-**Alcance:** reglas documentadas y su trazabilidad con Java HEAD `5f241fe`, SQL/configuracion, AS-IS historico y pruebas.  
+**Iteracion:** Master Prompt 01, 2026-09-02
+**Alcance:** reglas documentadas y su trazabilidad con Java HEAD `5f241fe`, SQL/configuracion, AS-IS historico y pruebas.
 **No es una decision de negocio:** el termino "canonical" identifica el catalogo normalizado para validacion; no selecciona una fuente ganadora cuando hay contradiccion.
 
 ## Fuentes y regla de lectura

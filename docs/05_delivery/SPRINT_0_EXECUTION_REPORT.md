@@ -1,7 +1,7 @@
 # Informe de ejecución — Plan 3, Sprint 0 Foundation
 
-**Fecha:** 2026-09-02  
-**Rama:** `feat/plan3-sprint0-foundation`  
+**Fecha:** 2026-09-02
+**Rama:** `feat/plan3-sprint0-foundation`
 **Base inicial:** `5f241fe0d1a47cfc783f866408219da38e085ab2` (`main`)
 
 ## Propósito y límite aplicado
