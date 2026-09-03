@@ -4,6 +4,12 @@ import com.visana.erp.commerce.application.dto.ConfirmOrderCommand;
 import com.visana.erp.commerce.application.dto.CreateOrderCommand;
 import com.visana.erp.commerce.application.port.in.ConfirmOrderPaymentUseCase;
 import com.visana.erp.commerce.application.port.in.CreateOrderUseCase;
+import com.visana.erp.core.infrastructure.config.security.KeycloakAuthenticatedPrincipalAdapter;
+import com.visana.erp.platform.application.authorization.AuthorizationPolicy;
+import com.visana.erp.platform.application.identity.ActorResolution;
+import com.visana.erp.platform.application.identity.ActorResolverPort;
+import com.visana.erp.platform.application.identity.UnlinkedIdentityException;
+import com.visana.erp.platform.application.ownership.OwnershipDeniedException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
@@ -25,10 +31,18 @@ public class OrderController {
 
     private final ConfirmOrderPaymentUseCase confirmOrderPaymentUseCase;
     private final CreateOrderUseCase createOrderUseCase;
+    private final KeycloakAuthenticatedPrincipalAdapter principalAdapter;
+    private final ActorResolverPort actorResolver;
+    private final AuthorizationPolicy authorizationPolicy;
 
-    public OrderController(ConfirmOrderPaymentUseCase confirmOrderPaymentUseCase, CreateOrderUseCase createOrderUseCase) {
+    public OrderController(ConfirmOrderPaymentUseCase confirmOrderPaymentUseCase, CreateOrderUseCase createOrderUseCase,
+                           KeycloakAuthenticatedPrincipalAdapter principalAdapter, ActorResolverPort actorResolver,
+                           AuthorizationPolicy authorizationPolicy) {
         this.confirmOrderPaymentUseCase = confirmOrderPaymentUseCase;
         this.createOrderUseCase = createOrderUseCase;
+        this.principalAdapter = principalAdapter;
+        this.actorResolver = actorResolver;
+        this.authorizationPolicy = authorizationPolicy;
     }
 
     @PostMapping
@@ -54,14 +68,22 @@ public class OrderController {
     public ResponseEntity<Void> confirmPayment(
             @PathVariable("orderId") UUID orderId,
             @AuthenticationPrincipal Jwt jwt) {
-        
-        // Extract tenant ID for multitenancy logic if required in the future by the Use Case
-        // String empresaId = jwt.getClaimAsString("empresa_id");
-        
+        UUID actorId = resolveLinkedActor(jwt);
+        if (!authorizationPolicy.canConfirmPayment(actorId, orderId)) {
+            throw new OwnershipDeniedException();
+        }
         ConfirmOrderCommand command = new ConfirmOrderCommand(orderId);
         confirmOrderPaymentUseCase.execute(command);
         
         return ResponseEntity.ok().build();
+    }
+
+    private UUID resolveLinkedActor(Jwt jwt) {
+        ActorResolution resolution = actorResolver.resolve(principalAdapter.from(jwt, java.util.Set.of()));
+        if (!resolution.isLinked()) {
+            throw new UnlinkedIdentityException();
+        }
+        return resolution.actorId().value();
     }
     
     public record OrderResponse(UUID orderId) {}

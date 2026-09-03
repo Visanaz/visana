@@ -31,7 +31,7 @@ public class KeycloakJwtAuthenticationConverter implements Converter<Jwt, Abstra
     }
 
     private String getPrincipalClaimName(Jwt jwt) {
-        return jwt.getClaimAsString("preferred_username");
+        return jwt.getSubject();
     }
 
     private Collection<? extends GrantedAuthority> extractResourceRoles(Jwt jwt) {
