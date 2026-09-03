@@ -30,6 +30,7 @@ class PostgreSqlAuditEventIntegrationTest {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+        registry.add("spring.sql.init.mode", () -> "never");
     }
 
     @Autowired private PersistentAuditEventWriter writer;
