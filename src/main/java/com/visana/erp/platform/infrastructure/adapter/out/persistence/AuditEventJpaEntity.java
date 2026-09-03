@@ -4,7 +4,9 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
 
+import java.sql.Types;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -14,6 +16,7 @@ public class AuditEventJpaEntity {
 
     @Id
     @Column(name = "audit_id", nullable = false, length = 36)
+    @JdbcTypeCode(Types.VARCHAR)
     private UUID auditId;
     @Column(name = "actor_id", length = 128)
     private String actorId;
@@ -47,4 +50,11 @@ public class AuditEventJpaEntity {
     String metadata() {
         return metadata;
     }
+
+    String actorId() { return actorId; }
+    String action() { return action; }
+    String resourceType() { return resourceType; }
+    String resourceId() { return resourceId; }
+    Instant occurredAt() { return occurredAt; }
+    String correlationId() { return correlationId; }
 }
