@@ -26,3 +26,7 @@
 - Local Maven: 113 tests, 0 failures, 0 errors, 2 skipped because Windows Testcontainers Npipe remains unavailable.
 - `PostgreSqlIdentityOwnershipIntegrationTest` is a PostgreSQL/Testcontainers CI test. It covers Flyway V1–V4, actor/link persistence, unique external identity, linked/unlinked/disabled resolution, explicit ownership, owner/foreign-owner authorization and audit events.
 - The CI runner is the authoritative runtime for container integration while `WINDOWS_TESTCONTAINERS_NPIPE` remains environment debt.
+
+## CI evidence
+
+GitHub Actions run `33716950496` completed `clean verify` with 113 tests, 0 failures, 0 errors and 0 skipped. It started `postgres:16-alpine`, applied Flyway V1–V4 on PostgreSQL and executed `PostgreSqlIdentityOwnershipIntegrationTest` successfully.
