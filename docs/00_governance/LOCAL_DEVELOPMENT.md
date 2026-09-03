@@ -19,4 +19,3 @@ Para preservar los artefactos históricos versionados bajo `target/`, una verifi
 ## Perfiles y datos
 
 Los perfiles `local`, `test`, `dev`, `qa` y `prod` son el objetivo de configuración de Sprint 1. No están todos implementados aún. MySQL se conserva como fuente legacy; PostgreSQL target, Compose y Testcontainers requieren la foundation autorizada de Sprint 1 y no se infieren en este documento.
-

@@ -29,4 +29,3 @@ Un `hotfix/*` nace de `main` únicamente ante un incidente crítico y autorizaci
 ## Protección operativa
 
 Las ramas protegidas deben impedir force-push y borrado, exigir PR y CI, y exigir revisión cuando el plan de GitHub lo permita. Si la plataforma no ofrece una protección, la regla sigue siendo obligatoria de forma manual y debe registrarse como `BRANCH_PROTECTION_NOT_AVAILABLE`.
-

@@ -19,4 +19,3 @@ La producción requerirá un GitHub Environment `production` con aprobación man
 ## Rollback y etiquetado
 
 Un rollback debe partir de un release identificado de `main`, documentar el incidente y reconciliar cualquier hotfix hacia `dev`. Los tags semánticos se crean sólo al promover una release aprobada de `qa` a `main`; no se crea tag durante Sprint 0 ni mientras no exista release de producción.
-
