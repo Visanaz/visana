@@ -3,7 +3,7 @@
 ```text
 PLAN 3
 ├── Identity          PARTIAL              GAP-014
-├── Commerce          PARTIAL              GAP-011, GAP-026
+├── Commerce          PARTIAL              GAP-011, GAP-026, TS-COM-003
 ├── Network           BLOCKED_BY_SOURCE    GAP-004, GAP-008, GAP-021
 ├── Compensation      BLOCKED_BY_DECISION  GAP-001..010
 ├── Finance           MISSING              GAP-012, GAP-013, GAP-028

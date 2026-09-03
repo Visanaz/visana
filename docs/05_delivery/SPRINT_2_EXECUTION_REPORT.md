@@ -2,6 +2,7 @@
 
 **Base:** `3b70498` (`dev`, Sprint 1B squash merge)
 **Branch:** `feat/plan3-sprint2-identity-ownership`
+**Estado:** DONE — squash merged into `dev` as `8067451` on 2026-09-03.
 
 ## Implemented foundation
 

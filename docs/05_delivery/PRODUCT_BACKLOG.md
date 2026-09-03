@@ -14,3 +14,7 @@
 **Totales:** 8 EPIC, 16 FEATURE y 28 US/TS identificadas (10 US, 18 TS). Complejidad y criterios se detallan en la hoja de ruta; no se estiman horas ni precio.
 
 Condición común de aceptación: BR/DG trazado, policy de seguridad aplicable, auditoría/correlación, pruebas requeridas y documentación. Un item bloqueado no autoriza decidir su regla.
+
+## Actualización Sprint 3
+
+`FEAT-005` queda **PARCIALMENTE_IMPLEMENTADA**: catálogo autenticado de lectura y orden Plan 3 con ownership explícito. `TS-COM-003` (idempotencia de creación) permanece diferida por contrato/reintento/reconciliación no aprobados. `FEAT-006` y cualquier efecto financiero continúan bloqueados por GAP-011/012 y DG-15.
