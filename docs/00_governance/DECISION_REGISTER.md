@@ -19,7 +19,7 @@ Este registro consolida decisiones de negocio y de control que bloquean la evalu
 | DG-13 | Regla de envio >3 productos | SIGUE_ABIERTO | PDF sin implementacion fuente | Comercio/operacion no determinables. |
 | DG-14 | Proveedor de identidad: Keycloak o Identity Platform/Firebase Auth | SIGUE_ABIERTO | Java usa Keycloak/JWT; objetivo comercial contempla Google; no hay plan de migracion de usuarios | Identidad, costos, operacion y claims. |
 | DG-15 | Payment provider y contrato de confirmacion | SIGUE_ABIERTO | Java solo simula pago; no hay gateway/webhook | Confirmacion financiera, idempotencia y conciliacion. |
-| DG-16 | Fuente frontend o alcance de Angular nuevo | SIGUE_ABIERTO | No hay frontend source en el clon | Contratos API, UX y plan de entrega. |
+| DG-16 | Fuente frontend o alcance de Angular nuevo | SIGUE_ABIERTO | SRC-009 aporta fuente parcial/artefactos: front controller CodeIgniter, CSS/JS y activos; faltan vistas, rutas, controladores y build. No se cierra por artefacto aislado. | Validar journeys, roles, contratos API, UX y alcance de un frontend nuevo. |
 | DG-17 | Cardinalidad Platform Actor a perfiles de negocio | SIGUE_ABIERTO | Sprint 2 introduce actor técnico separado; no existe fuente que relacione actor con Customer/Affiliate/Distributor | Ownership y provisioning de perfiles no pueden inferirse. |
 
 **Condicion para cerrar un gate:** regla de negocio aprobada por VISANA, fuente de verdad identificada, efectos de datos/finanzas definidos y criterios de prueba acordados. El cierre no se infiere de una semilla SQL, documento o binario aislado.

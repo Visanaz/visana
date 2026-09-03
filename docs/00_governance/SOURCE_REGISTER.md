@@ -10,6 +10,7 @@
 | SRC-006 | `pom.xml`, `docker-compose.yml`, `src/main/resources/application.properties`, `visana-realm-export.json` | Build, infraestructura y seguridad | Inspeccionado | Secretos identificados sin reproducir. No se levantaron servicios. |
 | SRC-007 | `src/test/java` y `target/surefire-reports` | Pruebas y reportes generados | Inspeccionado estaticamente | Hay 19 clases de prueba y 19 XML Surefire versionados que declaran 102 pruebas, 0 fallos/errores. No fueron reejecutados en esta auditoria. |
 | SRC-008 | `.agents/rules/*.md` y `.agents/modules/*.md` | Reglas y documentacion tecnica interna | Inspeccionado | Describe arquitectura Clean/DDD, flujo objetivo y modulos. Es documentacion de intencion; no acredita que el codigo actual ejecute lo descrito. |
+| SRC-009 | `C:\visana_auditoria\visana_frontend` | Entrega frontend legado parcial | Inspeccionado estaticamente | 242 archivos sin Git; contiene front controller CodeIgniter, configuracion Apache, CSS/JS y activos, pero no vistas, rutas, controladores ni manifiesto de build. Ver `docs/07_frontend_audit/FRONTEND_SOURCE_REGISTER.md`. |
 
 ## Reglas de contraste
 
@@ -24,3 +25,4 @@
 - SRC-005: tablas `orders`, `order_items` y `commissions`, lineas 1, 10 y 20.
 - SRC-006: JPA en modo `validate` y emisor JWT en `application.properties:11,16`; reglas HTTP en `SecurityConfig.java:24-32`.
 - SRC-008: `.agents/rules/architecture-rules.mcp.md`, `.agents/rules/business-logic.mcp.md` y modulos documentales; sus discrepancias con el fuente se registran en `LEGACY_FINDINGS.md`.
+- SRC-009: `index.php`, `.htaccess`, 18 archivos JavaScript, 2 CSS, activos y `package-lock.json`; las llamadas JavaScript son referencias estáticas y no fueron invocadas.
