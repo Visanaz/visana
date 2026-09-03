@@ -2,7 +2,13 @@ package com.visana.erp.commerce.infrastructure.adapter.in.web;
 
 import com.visana.erp.commerce.application.dto.ConfirmOrderCommand;
 import com.visana.erp.commerce.application.port.in.ConfirmOrderPaymentUseCase;
+import com.visana.erp.core.infrastructure.config.security.KeycloakAuthenticatedPrincipalAdapter;
+import com.visana.erp.platform.application.authorization.AuthorizationPolicy;
+import com.visana.erp.platform.application.identity.ActorResolution;
+import com.visana.erp.platform.application.identity.ActorResolverPort;
+import com.visana.erp.platform.application.identity.AuthenticatedPrincipal;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -12,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -30,6 +37,24 @@ class OrderControllerTest {
 
     @org.springframework.boot.test.mock.mockito.MockBean
     private com.visana.erp.commerce.application.port.in.CreateOrderUseCase createOrderUseCase;
+
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private KeycloakAuthenticatedPrincipalAdapter principalAdapter;
+
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private ActorResolverPort actorResolver;
+
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private AuthorizationPolicy authorizationPolicy;
+
+    @BeforeEach
+    void setUpIdentityFoundation() {
+        UUID actorId = UUID.randomUUID();
+        org.mockito.Mockito.when(principalAdapter.from(any(org.springframework.security.oauth2.jwt.Jwt.class), anySet()))
+                .thenReturn(new AuthenticatedPrincipal("OIDC", "https://issuer.test", "subject", java.util.Set.of()));
+        org.mockito.Mockito.when(actorResolver.resolve(any())).thenReturn(ActorResolution.linked(com.visana.erp.platform.domain.identity.PlatformActorId.of(actorId)));
+        org.mockito.Mockito.when(authorizationPolicy.canConfirmPayment(any(UUID.class), any(UUID.class))).thenReturn(true);
+    }
 
     @Test
     void shouldReturnOkWhenPaymentIsConfirmed() throws Exception {
@@ -75,5 +100,15 @@ class OrderControllerTest {
         // Expect 401 Unauthorized since we enforce JWT auth in Spring Security (assumed setup)
         mockMvc.perform(post("/api/v1/orders/{orderId}/pay", orderId).with(csrf()))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldDenyPaymentConfirmationWhenActorDoesNotOwnOrder() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        org.mockito.Mockito.when(authorizationPolicy.canConfirmPayment(any(UUID.class), any(UUID.class))).thenReturn(false);
+
+        mockMvc.perform(post("/api/v1/orders/{orderId}/pay", orderId)
+                        .with(jwt().jwt(builder -> builder.claim("tenant_id", "11111111-1111-1111-1111-111111111111"))))
+                .andExpect(status().isForbidden());
     }
 }

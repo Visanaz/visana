@@ -1,6 +1,9 @@
 package com.visana.erp.core.infrastructure.adapter.in.web.exception;
 
 import com.visana.erp.ledger.domain.model.InsufficientFundsException;
+import com.visana.erp.platform.application.identity.IdentityConflictException;
+import com.visana.erp.platform.application.identity.UnlinkedIdentityException;
+import com.visana.erp.platform.application.ownership.OwnershipDeniedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -43,6 +46,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problemDetail.setTitle("Conflict in State");
         problemDetail.setType(URI.create("https://visana.com/errors/conflict-state"));
+        return withCorrelation(problemDetail);
+    }
+
+    @ExceptionHandler({UnlinkedIdentityException.class, OwnershipDeniedException.class})
+    public ProblemDetail handleForbidden(RuntimeException ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        problemDetail.setTitle("Forbidden");
+        problemDetail.setType(URI.create("https://visana.com/errors/forbidden"));
+        return withCorrelation(problemDetail);
+    }
+
+    @ExceptionHandler(IdentityConflictException.class)
+    public ProblemDetail handleIdentityConflict(IdentityConflictException ex) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problemDetail.setTitle("Identity Conflict");
+        problemDetail.setType(URI.create("https://visana.com/errors/identity-conflict"));
         return withCorrelation(problemDetail);
     }
 
