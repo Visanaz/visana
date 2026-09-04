@@ -19,9 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController @RequestMapping("/api/v1") @Tag(name="Catalog", description="Authenticated Plan 3 catalog queries")
 public class CatalogController {
     private final CatalogQueryService catalog; public CatalogController(CatalogQueryService catalog){this.catalog=catalog;}
-    @GetMapping("/products") @Operation(summary="List active catalog products")
+    @GetMapping("/products") @Operation(operationId="listCatalogProducts", summary="List active catalog products")
     public Page<ProductResponse> products(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size,@RequestParam(defaultValue="name") String sort) { return catalog.activeProducts(pageable(page,size,sort)).map(this::product); }
-    @GetMapping("/categories") @Operation(summary="List active catalog categories")
+    @GetMapping("/categories") @Operation(operationId="listCatalogCategories", summary="List active catalog categories")
     public Page<CategoryResponse> categories(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size,@RequestParam(defaultValue="name") String sort) { return catalog.activeCategories(categoryPageable(page,size,sort)).map(this::category); }
     private Pageable pageable(int page,int size,String sort){ if(page<0||size<1||size>100) throw new IllegalArgumentException("page must be non-negative and size must be between 1 and 100"); if(!sort.equals("name")&&!sort.equals("sku")&&!sort.equals("createdAt")) throw new IllegalArgumentException("unsupported catalog sort"); String field=sort.equals("createdAt")?"createdAt":sort; return PageRequest.of(page,size,Sort.by(field).ascending()); }
     private Pageable categoryPageable(int page,int size,String sort){ if(page<0||size<1||size>100) throw new IllegalArgumentException("page must be non-negative and size must be between 1 and 100"); if(!sort.equals("name")&&!sort.equals("createdAt")) throw new IllegalArgumentException("unsupported category sort"); return PageRequest.of(page,size,Sort.by(sort).ascending()); }

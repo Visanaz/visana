@@ -32,7 +32,7 @@ public class MeController {
     }
 
     @GetMapping
-    @Operation(summary = "Get current platform actor", description = "Returns only internal actor linkage status and granted role names; it never returns token claims or credentials.")
+    @Operation(operationId = "getCurrentPlatformActor", summary = "Get current platform actor", description = "Returns only internal actor linkage status and granted role names; it never returns token claims or credentials.")
     public ResponseEntity<MeResponse> current(JwtAuthenticationToken authentication) {
         Set<String> roles = authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toUnmodifiableSet());
         Jwt jwt = authentication.getToken();
