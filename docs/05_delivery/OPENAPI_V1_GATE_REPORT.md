@@ -17,9 +17,11 @@ The canonical baseline is `openapi/visana-api-v1.json`. It is generated from run
 - Correlation: optional `X-Correlation-ID` request header and documented response header.
 - Operations: stable IDs for identity, catalog, own orders, simulated payment, network queries and the blocked legacy network-node route.
 
-## Known limits
+## Additive revision pending PM approval
 
-`GET /api/v1/products/{id}` is not exposed and remains `CATALOG_PRODUCT_DETAIL_API_GAP`. The 422 reusable response exists for the backend standard error model, but no additional business endpoint was created merely to exercise it. No finance, payout, reward, qualification or business-rule API is introduced.
+`OPENAPI_V1_BASELINE_R2 = PENDING_PM_APPROVAL`. It adds only `GET /api/v1/products/{id}` (`getProductById`): an authenticated, descriptive read of an active catalog product by UUID. The route uses the existing `CatalogQueryService`, persistence adapter and public `ProductResponse`; unknown or inactive IDs return the existing standard 404 `ProblemDetail`. This is classified `NON_BREAKING_ADDITIVE`; no existing path, operation, schema field or security declaration was removed or changed.
+
+`CATALOG_PRODUCT_DETAIL_API_GAP = IMPLEMENTED_PENDING_PM_MERGE`. The 422 reusable response exists for the backend standard error model, but no additional business endpoint was created merely to exercise it. No finance, payout, reward, qualification or business-rule API is introduced.
 
 ## Required review before F1
 
