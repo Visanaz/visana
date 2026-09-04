@@ -27,3 +27,12 @@ Los perfiles `local`, `test`, `dev`, `qa` y `prod` están definidos para separar
 ## PostgreSQL local (Sprint 1)
 
 Usar `docker compose -f compose.postgres.yml up -d` para una instancia PostgreSQL local aislada. Los valores de `.env.example` son placeholders seguros. Las credenciales de DEV, QA y producción permanecen externas al repositorio. Las pruebas específicas de PostgreSQL deben usar Testcontainers, no H2.
+# OpenAPI local generation
+
+Generate the canonical OpenAPI snapshot with Java 21:
+
+```text
+./mvnw --batch-mode -DskipTests test-compile exec:java -Dexec.args=openapi/visana-api-v1.json
+```
+
+The command starts a local, ephemeral contract context containing the real controllers, Springdoc and security configuration. It does not contact production, Keycloak, or a business database. Review and commit an intentional snapshot diff; the `openapi-contract` workflow regenerates it and fails on drift.

@@ -1,0 +1,1648 @@
+{
+  "components" : {
+    "responses" : {
+      "BadRequestProblem" : {
+        "content" : {
+          "application/problem+json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ProblemDetail"
+            }
+          }
+        },
+        "description" : "The request is invalid."
+      },
+      "ConflictProblem" : {
+        "content" : {
+          "application/problem+json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ProblemDetail"
+            }
+          }
+        },
+        "description" : "The request conflicts with the current resource state."
+      },
+      "ForbiddenProblem" : {
+        "content" : {
+          "application/problem+json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ProblemDetail"
+            }
+          }
+        },
+        "description" : "The authenticated actor is not allowed to perform this operation."
+      },
+      "InternalServerProblem" : {
+        "content" : {
+          "application/problem+json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ProblemDetail"
+            }
+          }
+        },
+        "description" : "An unexpected error occurred. Use the correlation ID for support."
+      },
+      "NotFoundProblem" : {
+        "content" : {
+          "application/problem+json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ProblemDetail"
+            }
+          }
+        },
+        "description" : "The requested resource was not found."
+      },
+      "UnauthorizedProblem" : {
+        "content" : {
+          "application/problem+json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ProblemDetail"
+            }
+          }
+        },
+        "description" : "Authentication is required."
+      },
+      "UnprocessableProblem" : {
+        "content" : {
+          "application/problem+json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ProblemDetail"
+            }
+          }
+        },
+        "description" : "The request cannot be processed."
+      }
+    },
+    "schemas" : {
+      "CategoryResponse" : {
+        "properties" : {
+          "categoryId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CreateNetworkNodeRequest" : {
+        "properties" : {
+          "role" : {
+            "type" : "string"
+          },
+          "sponsorId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CreateOrderLineRequest" : {
+        "properties" : {
+          "productId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "quantity" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CreateOrderRequest" : {
+        "properties" : {
+          "lines" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CreateOrderLineRequest"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "MeResponse" : {
+        "properties" : {
+          "actorId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "identityStatus" : {
+            "enum" : [ "LINKED", "UNLINKED_IDENTITY", "DISABLED_IDENTITY" ],
+            "type" : "string"
+          },
+          "roles" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array",
+            "uniqueItems" : true
+          }
+        },
+        "type" : "object"
+      },
+      "MemberDepthResponse" : {
+        "properties" : {
+          "depth" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "memberId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "MemberResponse" : {
+        "properties" : {
+          "memberId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "NetworkNodeResponse" : {
+        "properties" : {
+          "affiliateId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "OrderLineResponse" : {
+        "properties" : {
+          "lineTotal" : {
+            "type" : "number"
+          },
+          "productCode" : {
+            "type" : "string"
+          },
+          "productId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "productName" : {
+            "type" : "string"
+          },
+          "quantity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "unitPrice" : {
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "OrderResponse" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "lines" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OrderLineResponse"
+            },
+            "type" : "array"
+          },
+          "orderId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "ownerActorId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "total" : {
+            "type" : "number"
+          },
+          "updatedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PageCategoryResponse" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CategoryResponse"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageOrderResponse" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OrderResponse"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageProductResponse" : {
+        "properties" : {
+          "content" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ProductResponse"
+            },
+            "type" : "array"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "first" : {
+            "type" : "boolean"
+          },
+          "last" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "numberOfElements" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageable" : {
+            "$ref" : "#/components/schemas/PageableObject"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "PageableObject" : {
+        "properties" : {
+          "offset" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "pageNumber" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pageSize" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "paged" : {
+            "type" : "boolean"
+          },
+          "sort" : {
+            "$ref" : "#/components/schemas/SortObject"
+          },
+          "unpaged" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "ProblemDetail" : {
+        "properties" : {
+          "correlationId" : {
+            "type" : "string"
+          },
+          "detail" : {
+            "type" : "string"
+          },
+          "instance" : {
+            "format" : "uri",
+            "type" : "string"
+          },
+          "status" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "type" : {
+            "format" : "uri",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ProductResponse" : {
+        "properties" : {
+          "basePrice" : {
+            "type" : "number"
+          },
+          "categoryId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "code" : {
+            "type" : "string"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "productId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "sku" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "SortObject" : {
+        "properties" : {
+          "empty" : {
+            "type" : "boolean"
+          },
+          "sorted" : {
+            "type" : "boolean"
+          },
+          "unsorted" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      }
+    },
+    "securitySchemes" : {
+      "bearerAuth" : {
+        "bearerFormat" : "JWT",
+        "scheme" : "bearer",
+        "type" : "http"
+      }
+    }
+  },
+  "info" : {
+    "title" : "VISANA Plan 3 API",
+    "version" : "v1"
+  },
+  "openapi" : "3.0.1",
+  "paths" : {
+    "/api/v1/categories" : {
+      "get" : {
+        "operationId" : "listCatalogCategories",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sort",
+          "required" : false,
+          "schema" : {
+            "default" : "name",
+            "type" : "string"
+          }
+        }, {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageCategoryResponse"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "List active catalog categories",
+        "tags" : [ "Catalog" ]
+      }
+    },
+    "/api/v1/me" : {
+      "get" : {
+        "description" : "Returns only internal actor linkage status and granted role names; it never returns token claims or credentials.",
+        "operationId" : "getCurrentPlatformActor",
+        "parameters" : [ {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "Get current platform actor",
+        "tags" : [ "Identity" ]
+      }
+    },
+    "/api/v1/network-nodes" : {
+      "post" : {
+        "description" : "LEGACY / BLOCKED: this route always denies creation until affiliation controls are approved; it does not create a node.",
+        "operationId" : "createLegacyNetworkNodeBlocked",
+        "parameters" : [ {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateNetworkNodeRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/NetworkNodeResponse"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "Create a legacy network node",
+        "tags" : [ "Network Nodes" ]
+      }
+    },
+    "/api/v1/network/ancestors" : {
+      "get" : {
+        "operationId" : "listNetworkAncestors",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "default" : 50,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/MemberDepthResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "List network ancestors",
+        "tags" : [ "Network" ]
+      }
+    },
+    "/api/v1/network/descendants" : {
+      "get" : {
+        "operationId" : "listNetworkDescendants",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "default" : 50,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/MemberDepthResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "List network descendants",
+        "tags" : [ "Network" ]
+      }
+    },
+    "/api/v1/network/direct" : {
+      "get" : {
+        "operationId" : "listDirectNetworkMembers",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "default" : 50,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/MemberResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "List direct network members",
+        "tags" : [ "Network" ]
+      }
+    },
+    "/api/v1/network/me" : {
+      "get" : {
+        "operationId" : "getCurrentNetworkMember",
+        "parameters" : [ {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MemberResponse"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "Get current network member",
+        "tags" : [ "Network" ]
+      }
+    },
+    "/api/v1/orders" : {
+      "get" : {
+        "operationId" : "listOwnedOrders",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sort",
+          "required" : false,
+          "schema" : {
+            "default" : "createdAt",
+            "type" : "string"
+          }
+        }, {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageOrderResponse"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "List orders owned by the current actor",
+        "tags" : [ "Plan 3 Orders" ]
+      },
+      "post" : {
+        "description" : "Only productId and quantity are accepted. The server snapshots catalog prices; this endpoint does not confirm payment.",
+        "operationId" : "createOwnedOrder",
+        "parameters" : [ {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OrderResponse"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "Create an actor-owned order",
+        "tags" : [ "Plan 3 Orders" ]
+      }
+    },
+    "/api/v1/orders/{orderId}" : {
+      "get" : {
+        "operationId" : "getOwnedOrder",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "orderId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OrderResponse"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFoundProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "Read an owned order",
+        "tags" : [ "Plan 3 Orders" ]
+      }
+    },
+    "/api/v1/orders/{orderId}/pay" : {
+      "post" : {
+        "description" : "NON_PRODUCTION / SIMULATED: marks the order as PAID. It does not invoke a payment provider, webhook, settlement, or payout flow.",
+        "operationId" : "simulateOrderPayment",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "orderId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFoundProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "409" : {
+            "$ref" : "#/components/responses/ConflictProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "Confirm order payment",
+        "tags" : [ "Orders" ]
+      }
+    },
+    "/api/v1/products" : {
+      "get" : {
+        "operationId" : "listCatalogProducts",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "sort",
+          "required" : false,
+          "schema" : {
+            "default" : "name",
+            "type" : "string"
+          }
+        }, {
+          "description" : "Optional caller correlation ID. The server generates one when absent or invalid.",
+          "in" : "header",
+          "name" : "X-Correlation-ID",
+          "required" : false,
+          "schema" : {
+            "maxLength" : 128,
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageProductResponse"
+                }
+              }
+            },
+            "description" : "OK",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequestProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "401" : {
+            "$ref" : "#/components/responses/UnauthorizedProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "403" : {
+            "$ref" : "#/components/responses/ForbiddenProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerProblem",
+            "headers" : {
+              "X-Correlation-ID" : {
+                "description" : "Correlation ID generated or preserved by the server.",
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            }
+          }
+        },
+        "summary" : "List active catalog products",
+        "tags" : [ "Catalog" ]
+      }
+    }
+  },
+  "security" : [ {
+    "bearerAuth" : [ ]
+  } ],
+  "tags" : [ {
+    "description" : "Authenticated Plan 3 catalog queries",
+    "name" : "Catalog"
+  }, {
+    "description" : "Safe authenticated platform identity endpoints",
+    "name" : "Identity"
+  }, {
+    "description" : "Authenticated, minimum-data Plan 3 network queries",
+    "name" : "Network"
+  }, {
+    "description" : "Endpoints for managing the network genealogy (Affiliates and Distributors)",
+    "name" : "Network Nodes"
+  }, {
+    "description" : "Endpoints for managing commerce orders",
+    "name" : "Orders"
+  }, {
+    "description" : "Actor-owned commerce orders; not payment confirmation",
+    "name" : "Plan 3 Orders"
+  } ]
+}
