@@ -1,10 +1,16 @@
 package com.visana.erp.commerce.infrastructure.adapter.in.web;
 
-import com.visana.erp.VisanaApplication;
 import com.visana.erp.commerce.catalog.application.CatalogProductPort;
+import com.visana.erp.commerce.catalog.application.CatalogQueryService;
 import com.visana.erp.commerce.catalog.domain.CatalogProduct;
 import com.visana.erp.commerce.catalog.domain.CatalogProductStatus;
+import com.visana.erp.commerce.catalog.infrastructure.persistence.CatalogPersistenceAdapter;
 import com.visana.erp.core.domain.model.Money;
+import com.visana.erp.core.infrastructure.adapter.in.web.exception.GlobalExceptionHandler;
+import com.visana.erp.core.infrastructure.adapter.in.web.filter.CorrelationIdFilter;
+import com.visana.erp.core.infrastructure.config.WebFoundationConfig;
+import com.visana.erp.core.infrastructure.config.security.KeycloakJwtAuthenticationConverter;
+import com.visana.erp.core.infrastructure.config.security.SecurityConfig;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -12,6 +18,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -25,7 +36,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(classes = VisanaApplication.class)
+@SpringBootTest(classes = PostgreSqlCatalogProductDetailIntegrationTest.CatalogDetailTestApplication.class)
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class PostgreSqlCatalogProductDetailIntegrationTest {
@@ -42,6 +53,7 @@ class PostgreSqlCatalogProductDetailIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired CatalogProductPort products;
     @MockBean JwtDecoder jwtDecoder;
+    @MockBean KeycloakJwtAuthenticationConverter keycloakJwtAuthenticationConverter;
 
     @Test void persistedActiveProductIsReturnedByTheAuthenticatedDetailEndpoint() throws Exception {
         UUID productId = UUID.randomUUID();
@@ -61,4 +73,12 @@ class PostgreSqlCatalogProductDetailIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404));
     }
+
+    @Configuration
+    @EnableAutoConfiguration
+    @EntityScan(basePackages = "com.visana.erp")
+    @EnableJpaRepositories(basePackages = "com.visana.erp")
+    @Import({CatalogPersistenceAdapter.class, CatalogQueryService.class, CatalogController.class,
+            GlobalExceptionHandler.class, CorrelationIdFilter.class, WebFoundationConfig.class, SecurityConfig.class})
+    static class CatalogDetailTestApplication { }
 }
