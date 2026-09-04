@@ -1,5 +1,9 @@
 # Desarrollo local — VISANA
 
+## Límite de repositorio
+
+Este repositorio es el backend de VISANA: Java/Spring, PostgreSQL/Flyway, reglas de negocio y el contrato OpenAPI canónico. El código Angular, Node/npm, Playwright y su CI viven en `Visanaz/visana-front`; el frontend no se desarrolla ni se valida aquí. La futura integración consume el snapshot OpenAPI aprobado desde el backend.
+
 ## Prerrequisitos
 
 - JDK 21.
