@@ -2,7 +2,19 @@
 
 ## Status
 
-Repository split is complete: backend cleanup PR #13 merged to backend `dev`, and this PR has been reconciled by merging that backend-only baseline. PR #12 remains open and unmerged for PM contract review. Rehome status: `REHOME_COMPLETED_PENDING_PM_MERGE`.
+Repository split is complete: backend cleanup PR #13 merged to backend `dev`, and OpenAPI PR #12 was squash-merged after passing its checks. `OPENAPI_V1_BASELINE = APPROVED`. Rehome status: `REHOME_COMPLETED`.
+
+### Approved baseline record
+
+| Field | Value |
+|---|---|
+| Backend repository | `Visanaz/visana` |
+| Backend `dev` commit | `bd656c938400414edc21cc0ff830937a53e05e3b` |
+| Snapshot | `openapi/visana-api-v1.json` |
+| Snapshot SHA-256 | `1A1CE867634D8D957D75F2ED24EFE593D8A78B61FA490386685BF72FCE0B432B` |
+| OpenAPI version | `3.0.1` |
+| API version | `v1` |
+| Approved date | `2026-09-04` |
 
 ## Inventory and destination
 

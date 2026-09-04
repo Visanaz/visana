@@ -2,6 +2,11 @@
 
 ## Result
 
+`OPENAPI_V1_BASELINE = APPROVED` after squash merge of PR #12 into backend `dev`.
+
+Approved baseline commit: `bd656c938400414edc21cc0ff830937a53e05e3b`.
+Snapshot SHA-256: `1A1CE867634D8D957D75F2ED24EFE593D8A78B61FA490386685BF72FCE0B432B`.
+
 The canonical baseline is `openapi/visana-api-v1.json`. It is generated from runtime Springdoc in a controlled local contract context and checked for deterministic regeneration by CI.
 
 ## Scope
