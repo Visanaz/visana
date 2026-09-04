@@ -18,6 +18,10 @@ The snapshot covers only current `/api/v1` mappings. `GET /api/v1/products/{id}`
 
 Prefer OpenAPI Generator `typescript-angular` for typed transport because it is already pinned in the F0 workspace and supports regeneration. Keep auth/bearer, correlation, ProblemDetail and view-model behavior in feature adapters/facades. Alternative generators such as `ng-openapi-gen` and `openapi-typescript-codegen` require a separate compatibility/maintenance review before adoption; no client is generated in this gate.
 
+## Cross-repository delivery
+
+`Visanaz/visana` remains the canonical owner; `Visanaz/visana-front` must not copy or hand-edit the snapshot. After PM approval, publish the snapshot reproducibly as a GitHub release or CI artifact associated with the approved backend SHA. A raw file pinned to that immutable SHA is an acceptable temporary fallback. Package distribution is a later option. None of these mechanisms require frontend credentials, and no generated client is introduced by this contract gate.
+
 ## Future breaking-change gate
 
 This is `OPENAPI_V1_BASELINE`. A later backlog item must classify removed paths/fields, type changes, required-field additions and security changes as breaking or non-breaking; the present mandatory control is snapshot drift detection.

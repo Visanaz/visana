@@ -27,9 +27,7 @@ Los perfiles `local`, `test`, `dev`, `qa` y `prod` están definidos para separar
 ## PostgreSQL local (Sprint 1)
 
 Usar `docker compose -f compose.postgres.yml up -d` para una instancia PostgreSQL local aislada. Los valores de `.env.example` son placeholders seguros. Las credenciales de DEV, QA y producción permanecen externas al repositorio. Las pruebas específicas de PostgreSQL deben usar Testcontainers, no H2.
-# Local development
-
-The frontend runtime is pinned to Node `24.19.0` through `.node-version`; use that version with npm `11.6.2` and `frontend/README.md` commands. This is the single local Node pinning mechanism; CI continues to use Node 24.
+# OpenAPI local generation
 
 Generate the canonical OpenAPI snapshot with Java 21:
 
