@@ -12,7 +12,7 @@ Run `./mvnw --batch-mode -DskipTests test-compile exec:java -Dexec.args=openapi/
 
 ## Current boundary
 
-The snapshot covers only current `/api/v1` mappings. `GET /api/v1/products/{id}` is an authenticated, read-only lookup for an active catalog product identified by UUID; it returns the existing public `ProductResponse` or the standard 404 `ProblemDetail`. The additive revision is `OPENAPI_V1_BASELINE_R2` and remains `PENDING_PM_APPROVAL` until its backend PR is merged. Qualification, volume, rewards, commissions, tax, shipping, settlement and payout are absent by design. `POST /api/v1/orders/{orderId}/pay` is explicitly NON_PRODUCTION/SIMULATED.
+The snapshot covers only current `/api/v1` mappings. `GET /api/v1/products/{id}` is an authenticated, read-only lookup for an active catalog product identified by UUID; it returns the existing public `ProductResponse` or the standard 404 `ProblemDetail`. The additive revision `OPENAPI_V1_BASELINE_R2 = APPROVED` after merge of backend PR #14. Qualification, volume, rewards, commissions, tax, shipping, settlement and payout are absent by design. `POST /api/v1/orders/{orderId}/pay` is explicitly NON_PRODUCTION/SIMULATED.
 
 ## Future client
 
