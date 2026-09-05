@@ -88,7 +88,7 @@ public class OpenApiConfig {
         if (!"/api/v1/me".equals(path)) {
             addResponse(responses, "400", "#/components/responses/BadRequestProblem");
         }
-        if (path.contains("{orderId}")) {
+        if (path.contains("{orderId}") || "/api/v1/products/{id}".equals(path)) {
             addResponse(responses, "404", "#/components/responses/NotFoundProblem");
         }
         if (path.endsWith("/pay")) {

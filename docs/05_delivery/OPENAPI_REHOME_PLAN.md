@@ -16,6 +16,17 @@ Repository split is complete: backend cleanup PR #13 merged to backend `dev`, an
 | API version | `v1` |
 | Approved date | `2026-09-04` |
 
+### Pending additive revision record
+
+| Field | Value |
+|---|---|
+| Proposed revision | `OPENAPI_V1_BASELINE_R2` |
+| Status | `PENDING_PM_APPROVAL` |
+| Change classification | `NON_BREAKING_ADDITIVE` |
+| Added operation | `GET /api/v1/products/{id}` (`getProductById`) |
+| Prior SHA-256 | `1A1CE867634D8D957D75F2ED24EFE593D8A78B61FA490386685BF72FCE0B432B` |
+| Current generated SHA-256 | `D899F6669248E28C6FF3BE9F4EED57950A06C458F5EF6F6125EABC96EF799795` |
+
 ## Inventory and destination
 
 | PR #12 path | Classification | Target after split | Action |
