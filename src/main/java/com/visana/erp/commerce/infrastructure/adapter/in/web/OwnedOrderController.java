@@ -4,7 +4,10 @@ import com.visana.erp.commerce.order.application.*;
 import com.visana.erp.commerce.order.domain.*;
 import com.visana.erp.core.infrastructure.config.security.KeycloakAuthenticatedPrincipalAdapter;
 import com.visana.erp.platform.application.identity.*;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.math.BigDecimal;
 import java.util.List;
@@ -22,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
 public class OwnedOrderController {
  private final OwnedOrderService orders; private final KeycloakAuthenticatedPrincipalAdapter principalAdapter; private final ActorResolverPort actors;
  public OwnedOrderController(OwnedOrderService orders,KeycloakAuthenticatedPrincipalAdapter principalAdapter,ActorResolverPort actors){this.orders=orders;this.principalAdapter=principalAdapter;this.actors=actors;}
- @PostMapping @Operation(operationId="createOwnedOrder",summary="Create an actor-owned order",description="Only productId and quantity are accepted. The server snapshots catalog prices; this endpoint does not confirm payment.")
+ @PostMapping @Operation(operationId="createOwnedOrder",summary="Create an actor-owned order",description="Only productId and quantity are accepted. The server snapshots catalog prices; this endpoint does not confirm payment.",responses=@ApiResponse(responseCode="201",description="Created",content=@Content(schema=@Schema(implementation=OrderResponse.class))))
  public ResponseEntity<OrderResponse> create(@RequestBody CreateOrderRequest request,@AuthenticationPrincipal Jwt jwt){ OwnedOrder order=orders.create(actor(jwt),new CreateOwnedOrderCommand(request.lines().stream().map(line->new CreateOwnedOrderCommand.Line(line.productId(),line.quantity())).toList())); return ResponseEntity.status(HttpStatus.CREATED).body(response(order)); }
  @GetMapping("/{orderId}") @Operation(operationId="getOwnedOrder",summary="Read an owned order") public OrderResponse read(@PathVariable UUID orderId,@AuthenticationPrincipal Jwt jwt){return response(orders.read(actor(jwt),orderId));}
  @GetMapping @Operation(operationId="listOwnedOrders",summary="List orders owned by the current actor") public Page<OrderResponse> list(@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="20") int size,@RequestParam(defaultValue="createdAt") String sort,@AuthenticationPrincipal Jwt jwt){if(page<0||size<1||size>100)throw new IllegalArgumentException("page must be non-negative and size must be between 1 and 100");if(!sort.equals("createdAt")&&!sort.equals("status"))throw new IllegalArgumentException("unsupported order sort");return orders.list(actor(jwt),PageRequest.of(page,size,Sort.by(sort).descending())).map(this::response);}

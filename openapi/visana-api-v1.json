@@ -1243,7 +1243,7 @@
           "required" : true
         },
         "responses" : {
-          "200" : {
+          "201" : {
             "content" : {
               "*/*" : {
                 "schema" : {
@@ -1251,7 +1251,7 @@
                 }
               }
             },
-            "description" : "OK",
+            "description" : "Created",
             "headers" : {
               "X-Correlation-ID" : {
                 "description" : "Correlation ID generated or preserved by the server.",
