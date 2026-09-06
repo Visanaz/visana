@@ -8,15 +8,22 @@ import com.visana.erp.commerce.application.port.out.OrderRepository;
 import com.visana.erp.commerce.domain.model.Order;
 import com.visana.erp.commerce.domain.model.OrderId;
 import com.visana.erp.core.domain.model.Money;
+import java.time.Clock;
+import java.util.Objects;
 
 public class ConfirmOrderPaymentService implements ConfirmOrderPaymentUseCase {
 
     private final OrderRepository orderRepository;
     private final DomainEventPublisher eventPublisher;
+    private final Clock clock;
 
-    public ConfirmOrderPaymentService(OrderRepository orderRepository, DomainEventPublisher eventPublisher) {
-        this.orderRepository = orderRepository;
-        this.eventPublisher = eventPublisher;
+    public ConfirmOrderPaymentService(
+            OrderRepository orderRepository,
+            DomainEventPublisher eventPublisher,
+            Clock clock) {
+        this.orderRepository = Objects.requireNonNull(orderRepository);
+        this.eventPublisher = Objects.requireNonNull(eventPublisher);
+        this.clock = Objects.requireNonNull(clock);
     }
 
     @Override
@@ -30,7 +37,8 @@ public class ConfirmOrderPaymentService implements ConfirmOrderPaymentUseCase {
         orderRepository.save(order);
         
         Money total = order.calculateTotal();
-        OrderPaidEvent event = new OrderPaidEvent(order.getTenantId(), order.getOrderId(), order.getAffiliateId(), total);
+        OrderPaidEvent event = new OrderPaidEvent(
+                order.getTenantId(), order.getOrderId(), order.getAffiliateId(), total, clock.instant());
         eventPublisher.publish(event);
     }
 }

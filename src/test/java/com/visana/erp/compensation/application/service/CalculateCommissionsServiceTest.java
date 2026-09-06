@@ -25,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
@@ -71,7 +72,8 @@ class CalculateCommissionsServiceTest {
 
     @Test
     void shouldCalculateAndSaveCommissions() {
-        OrderPaidEvent event = new OrderPaidEvent(tenantId, orderId, buyerId, total);
+        OrderPaidEvent event = new OrderPaidEvent(
+                tenantId, orderId, buyerId, total, Instant.parse("2026-09-05T19:35:00Z"));
 
         Map<Integer, Percentage> plan = Map.of(1, Percentage.of("0.10"));
         when(commissionPlanProvider.getUnilevelPlan()).thenReturn(plan);
@@ -98,7 +100,8 @@ class CalculateCommissionsServiceTest {
 
     @Test
     void shouldNotSaveCommissionsIfUplineIsEmpty() {
-        OrderPaidEvent event = new OrderPaidEvent(tenantId, orderId, buyerId, total);
+        OrderPaidEvent event = new OrderPaidEvent(
+                tenantId, orderId, buyerId, total, Instant.parse("2026-09-05T19:35:00Z"));
 
         when(commissionPlanProvider.getUnilevelPlan()).thenReturn(Map.of(1, Percentage.of("0.10")));
         when(genealogyProvider.getUpline(buyerId, 8)).thenReturn(List.of());

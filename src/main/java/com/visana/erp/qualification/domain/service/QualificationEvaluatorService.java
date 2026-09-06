@@ -3,42 +3,104 @@ package com.visana.erp.qualification.domain.service;
 import com.visana.erp.core.domain.model.Money;
 import com.visana.erp.qualification.domain.model.AffiliateMetrics;
 import com.visana.erp.qualification.domain.model.LevelQualificationRule;
+import com.visana.erp.qualification.domain.model.QualificationEvaluation;
+import com.visana.erp.qualification.domain.model.QualificationLevelAssessment;
+import com.visana.erp.qualification.domain.model.QualificationResult;
+import com.visana.erp.qualification.domain.model.VersionedQualificationRuleSet;
+import com.visana.erp.qualification.domain.rules.RuleExecutionGuard;
 
-import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 public class QualificationEvaluatorService {
+    private final RuleExecutionGuard ruleExecutionGuard;
 
-    /**
-     * Evaluates if the affiliate is activated based on their purchases and a dynamic configuration.
-     * Note: Resolves AUD-001 conflict by not hardcoding activation days (e.g., 29 vs 30 days) nor the amount.
-     *
-     * @param totalPurchases Affiliate's total valid purchases in the evaluated period.
-     * @param lastPurchaseDate The date of the last valid purchase.
-     * @param evaluationDate The current date of evaluation.
-     * @param requiredActivationAmount The dynamic required amount for activation.
-     * @param activationDurationDays The dynamic required days the activation lasts.
-     * @return true if activated, false otherwise
-     */
-    public boolean evaluateActivation(Money totalPurchases, LocalDate lastPurchaseDate, LocalDate evaluationDate,
-                                      Money requiredActivationAmount, int activationDurationDays) {
-        Objects.requireNonNull(totalPurchases, "Total purchases cannot be null");
-        Objects.requireNonNull(requiredActivationAmount, "Required activation amount cannot be null");
+    public QualificationEvaluatorService() {
+        this(new RuleExecutionGuard());
+    }
 
-        if (lastPurchaseDate == null || evaluationDate == null) {
-            return false;
+    public QualificationEvaluatorService(RuleExecutionGuard ruleExecutionGuard) {
+        this.ruleExecutionGuard = Objects.requireNonNull(ruleExecutionGuard);
+    }
+
+    public QualificationResult evaluate(
+            QualificationEvaluation evaluation,
+            VersionedQualificationRuleSet rules,
+            Instant calculatedAt) {
+        Objects.requireNonNull(evaluation, "Qualification evaluation cannot be null");
+        Objects.requireNonNull(rules, "Qualification rules cannot be null");
+        Objects.requireNonNull(calculatedAt, "Calculation timestamp cannot be null");
+        ruleExecutionGuard.requireEvaluable(rules.ruleVersion(), evaluation.evaluatedAt());
+
+        UUID versionId = rules.ruleVersion().id();
+        if (!versionId.equals(evaluation.volumeResult().businessRuleVersionId())
+                || !versionId.equals(evaluation.activationWindow().businessRuleVersionId())) {
+            throw new IllegalArgumentException(
+                    "Activation, volume and qualification must reference the same rule version");
+        }
+        if (!evaluation.memberId().equals(evaluation.volumeResult().memberId())
+                || !evaluation.period().equals(evaluation.volumeResult().period())) {
+            throw new IllegalArgumentException("Volume result must belong to the evaluated member and period");
         }
 
-        long daysSinceLastPurchase = ChronoUnit.DAYS.between(lastPurchaseDate, evaluationDate);
-        if (daysSinceLastPurchase < 0 || daysSinceLastPurchase > activationDurationDays) {
-            return false;
+        boolean activationEligible = evaluation.activationWindow().isActiveAt(evaluation.evaluatedAt());
+        int qualifiedLevel = 0;
+        List<QualificationLevelAssessment> assessments = new ArrayList<>();
+        for (LevelQualificationRule rule : rules.levels()) {
+            boolean affiliationRequired = rules.affiliationRequiredLevels().contains(rule.getLevel());
+            boolean affiliationSatisfied = !affiliationRequired || evaluation.affiliated();
+            boolean metricsSatisfied = rule.isSatisfiedBy(
+                    evaluation.activeDirects(),
+                    evaluation.indirects(),
+                    evaluation.volumeResult().teamVolume());
+            boolean satisfied = activationEligible && affiliationSatisfied && metricsSatisfied;
+            if (satisfied) {
+                qualifiedLevel = Math.max(qualifiedLevel, rule.getLevel());
+            }
+            assessments.add(new QualificationLevelAssessment(
+                    rule.getLevel(),
+                    satisfied,
+                    activationEligible,
+                    affiliationRequired,
+                    evaluation.affiliated(),
+                    rule.getNetworkRequirement().minDirects(),
+                    evaluation.activeDirects(),
+                    rule.getNetworkRequirement().minIndirects(),
+                    evaluation.indirects(),
+                    rule.getVolumeRequirement().minTeamSales(),
+                    evaluation.volumeResult().teamVolume(),
+                    explanation(rule, evaluation, activationEligible, affiliationRequired)));
         }
 
-        return totalPurchases.amount().compareTo(requiredActivationAmount.amount()) >= 0;
+        String summary = "Qualified level = L" + qualifiedLevel
+                + "; activationEligible = " + activationEligible
+                + "; ruleVersion = " + rules.ruleVersion().ruleSetId() + ":" + rules.ruleVersion().version();
+        return new QualificationResult(
+                UUID.randomUUID(), evaluation.memberId(), evaluation.volumeResult().id(), evaluation.period(), versionId,
+                qualifiedLevel, qualifiedLevel > 0, activationEligible, assessments,
+                evaluation.evidenceReferences(), calculatedAt, summary);
+    }
+
+    private String explanation(
+            LevelQualificationRule rule,
+            QualificationEvaluation evaluation,
+            boolean activationEligible,
+            boolean affiliationRequired) {
+        return "L" + rule.getLevel()
+                + ": active directs = " + evaluation.activeDirects()
+                + ", required = " + rule.getNetworkRequirement().minDirects()
+                + "; indirects = " + evaluation.indirects()
+                + ", required = " + rule.getNetworkRequirement().minIndirects()
+                + "; Team Sales = " + evaluation.volumeResult().teamVolume().amount()
+                + ", required = " + rule.getVolumeRequirement().minTeamSales().amount()
+                + "; activationEligible = " + activationEligible
+                + "; affiliationRequired = " + affiliationRequired
+                + "; affiliated = " + evaluation.affiliated();
     }
 
     /**
