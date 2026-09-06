@@ -47,4 +47,4 @@ Todas permanecen no aprobadas. La fuente es aclaración verbal VISANA 2026-09-05
 
 DG-01 oficial, DG-09 base monetaria, DG-11 período, DG-18 movimiento de subárbol, pools de distribuidor, consistencia 6/12 meses, autoridad de aprobación de comisiones, reversos de comisiones pagadas, matriz tributaria, regla de envío 3 versus más de 3 y mecanismo/proveedor de pago.
 
-`PR8_RECONCILIATION_REQUIRED`: reconciliar PR #8 sólo después de este gate y después de recibir la fuente oficial; no fue modificada ni resuelta por Sprint 5.
+`PR8_RECONCILED_DOCS_ONLY_2026-09-06`: después del merge técnico de Sprint 5, PR #8 fue reconciliada con `dev` preservando su historial y su evidencia única. La PR permanece abierta/no fusionada y la fuente oficial de VISANA sigue pendiente; la reconciliación no aprueba reglas.

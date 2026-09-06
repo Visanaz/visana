@@ -8,7 +8,8 @@
 - Aprobación del cliente: **NO**. No existe todavía documento oficial escrito.
 - Uso permitido: evaluación técnica y fixtures sintéticos de desarrollo/prueba.
 - Uso prohibido: comisiones, ledger, liquidación, pago o cualquier otro efecto financiero de producción.
-- PR #8: permanece abierta y conflictiva; su contenido de negocio no se modifica ni se reconcilia en Sprint 5.
+- Relación canónica: esta Working Baseline conserva evidencia operacional provisional; `BUSINESS_RULES_BASELINE_V1_DRAFT.md` es un borrador histórico para aprobación y sólo será baseline v1.0 canónica cuando VISANA lo firme.
+- PR #8: reconciliada documentalmente después del merge técnico de Sprint 5; permanece abierta y no fusionada.
 
 ## DG-01 — Activación
 
@@ -72,10 +73,16 @@ Los valores siguientes coinciden con `BUSINESS_RULE_CATALOG.md` (BR-QUAL-002..00
 - Inicio de vigencia de recompra cuando existe solapamiento.
 - Toda fórmula o consecuencia de compensación, pools, impuestos, liquidación y pago.
 
+## DG-18 — Cambio de patrocinador
+
+Aclaración provisional de alta confianza: el cambio se limita a administración, requiere justificación y debe dejar auditoría. Esta evidencia no está aprobada y no habilita el comportamiento actualmente bloqueado.
+
+Permanece `OPEN` la semántica de movimiento de subárbol: miembros afectados, vigencia, conservación histórica y efectos sobre volumen o compensación. No se inventa ni implementa una respuesta.
+
 ## Integridad histórica
 
 Cada `VolumeResult` y `QualificationResult` referencia la versión exacta usada. Una versión nueva produce resultados nuevos; no reinterpreta ni actualiza resultados históricos. `PROVISIONAL` puede evaluarse en desarrollo/prueba, pero el guard técnico exige `APPROVED` antes de cualquier efecto financiero.
 
-## Reconciliación pendiente
+## Reconciliación PR #8
 
-`PR8_RECONCILIATION_REQUIRED`: después del gate técnico de Sprint 5 se debe reconciliar esta aclaración provisional con PR #8 y con el documento oficial de VISANA. Sprint 5 no resuelve los conflictos ni cambia decisiones del cliente.
+`PR8_RECONCILED_DOCS_ONLY_2026-09-06`: la evidencia provisional fue incorporada al borrador y al registro sin promover reglas. Sigue pendiente el documento oficial de VISANA; ninguna aclaración verbal se convirtió en `APPROVED`.
