@@ -40,7 +40,7 @@ public class OrderController {
     }
 
     @PostMapping("/{orderId}/pay")
-    @Operation(summary = "Confirm order payment", description = "Simulates payment confirmation and marks the order as PAID.")
+    @Operation(operationId = "simulateOrderPayment", summary = "Confirm order payment", description = "NON_PRODUCTION / SIMULATED: marks the order as PAID. It does not invoke a payment provider, webhook, settlement, or payout flow.")
     public ResponseEntity<Void> confirmPayment(
             @PathVariable("orderId") UUID orderId,
             @AuthenticationPrincipal Jwt jwt) {

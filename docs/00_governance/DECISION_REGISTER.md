@@ -1,27 +1,37 @@
 # Registro de decisiones pendientes - Plan 3
 
-Este registro consolida decisiones de negocio y de control que bloquean la evaluacion tecnica. No contiene decisiones tomadas ni arquitectura TO-BE.
+Este registro consolida el estado evidenciario vigente, reconciliado el 2026-09-06. Un estado provisional permite modelado y pruebas controladas; no equivale a aprobación de VISANA ni autoriza efectos financieros o productivos.
 
-| ID | Decision pendiente | Estado | Evidencia de apertura | Impacto de no decidir |
-|---|---|---|---|---|
-| DG-01 | Vigencia de activacion y recompra | SIGUE_ABIERTO | PDF mes/30 dias; SQL 30; PHP 29/current-month; Java parametrico | Activacion, calificación y comisiones no determinables. |
-| DG-02 | Invitacion de distribuidor: 10% o 3%/5% | SIGUE_ABIERTO | PDF vs `distributor_recruitment_tiers`; sin Java | Regla financiera contractual. |
-| DG-03 | Definicion y fuentes de team sales | SIGUE_ABIERTO | Umbrales PDF/SQL; `counts_for_team_sales=0`; sin ruta Java | Calificacion y volumen bloqueados. |
-| DG-04 | Aprobacion de comisiones | SIGUE_ABIERTO | PHP `pending/approved/paid`; Java sin puente a ledger | Ledger y liquidacion no cerrados. |
-| DG-05 | Ordenes de pago / calendario | SIGUE_ABIERTO | Tabla/PHP parcial; `Payout` Java aislado | Pago y conciliacion bloqueados. |
-| DG-06 | Pools y consistencia | SIGUE_ABIERTO | PDF/seeds sin calculador Java | Incentivos de distribuidor bloqueados. |
-| DG-07 | Premio adicional 1% L1-L7 | SIGUE_ABIERTO | Solo PDF | Riesgo de omision o duplicacion. |
-| DG-08 | Restriccion por rango/rama | SIGUE_ABIERTO | Solo PDF | Elegibilidad y retroactividad no definidas. |
-| DG-09 | Base y precedencia de incentivos | SIGUE_ABIERTO | Plan base/overrides SQL; Java mapa sin rol | Fuente de verdad financiera no determinable. |
-| DG-10 | Devoluciones/anulaciones | PARCIALMENTE_RESUELTO | `Commission.reverse()` aislado | Alcance financiero/datos no definido. |
-| DG-11 | Mes calendario vs 30 dias rolling | SIGUE_ABIERTO | Variante especifica de DG-01 | Casos limite de vigencia. |
-| DG-12 | Impuestos / retenciones | SIGUE_ABIERTO | PDF sin implementacion fuente | Payout neto y cumplimiento no definidos. |
-| DG-13 | Regla de envio >3 productos | SIGUE_ABIERTO | PDF sin implementacion fuente | Comercio/operacion no determinables. |
-| DG-14 | Proveedor de identidad: Keycloak o Identity Platform/Firebase Auth | SIGUE_ABIERTO | Java usa Keycloak/JWT; objetivo comercial contempla Google; no hay plan de migracion de usuarios | Identidad, costos, operacion y claims. |
-| DG-15 | Payment provider y contrato de confirmacion | SIGUE_ABIERTO | Java solo simula pago; no hay gateway/webhook | Confirmacion financiera, idempotencia y conciliacion. |
-| DG-16 | Fuente frontend o alcance de Angular nuevo | SIGUE_ABIERTO | No hay frontend source en el clon | Contratos API, UX y plan de entrega. |
-| DG-17 | Cardinalidad Platform Actor a perfiles de negocio | SIGUE_ABIERTO | Sprint 2 introduce actor técnico separado; no existe fuente que relacione actor con Customer/Affiliate/Distributor | Ownership y provisioning de perfiles no pueden inferirse. |
-| DG-18 | Política de cambio de patrocinador | SIGUE_ABIERTO | Sprint 4 rechaza re-parenting de forma segura; el plan no define excepción, historia ni efecto financiero | Genealogía, volumen histórico y futuras compensaciones no determinables. |
-| DG-19 | Autoridad de provisioning de afiliación | SIGUE_ABIERTO | El plan habla de afiliación, pero no define el evento/actor que la crea; endpoint heredado quedó bloqueado | Afiliación, sponsorship y acceso no pueden habilitarse de forma controlada. |
+| ID | Decisión | Estado coherente | Fuente y fecha | Aprobación VISANA | Pendiente explícito |
+|---|---|---|---|---|---|
+| DG-01 | Vigencia de activación y recompra | `PROVISIONAL_VERBAL_CLARIFICATION` | Aclaración verbal atribuida a Catherine, 2026-09-05; Working Baseline provisional y foundation Sprint 5 | `NO_APROBADA` | Documento oficial; hora exacta de vencimiento; recompra solapada. Trigger provisional: `PAYMENT_CONFIRMED`; inicio `paymentConfirmedAt`; duración `plusMonths(1)`. |
+| DG-02 | Invitación de distribuidor: 10% o 3%/5% | `SIGUE_ABIERTO` | SRC-003 PDF frente a `distributor_recruitment_tiers`; auditoría previa, vigente a 2026-09-05 | `NO_APROBADA` | Porcentaje oficial, elegibilidad, período y base. |
+| DG-03 | Definición y fuentes de Team Sales | `SIGUE_ABIERTO` | SRC-003/SQL y aclaración verbal 2026-09-05 recogida en Working Baseline | `NO_APROBADA` | La hipótesis propia + todos los descendientes es provisional; faltan venta calificable, estados, ajustes y fuente oficial. |
+| DG-04 | Aprobación de comisiones | `SIGUE_ABIERTO` | PHP histórico `pending/approved/paid` y Java aislado; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Actor, controles y momento de aprobación. |
+| DG-05 | Órdenes de pago y calendario | `SIGUE_ABIERTO` | SRC-003 y estructuras históricas/Java aisladas; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Ciclo completo, responsables, fallos, reintentos y feriados. |
+| DG-06 | Pools y consistencia | `SIGUE_ABIERTO` | SRC-003 y semillas sin calculador Java; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Base, participantes, escalonamiento y reglas de racha 6/12 meses. |
+| DG-07 | Premio adicional 1% L1-L7 | `SIGUE_ABIERTO` | SRC-003; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Si es adicional, equivalente o condicionado; elegibilidad y base. |
+| DG-08 | Restricción por rango/rama | `SIGUE_ABIERTO` | SRC-003; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Beneficios afectados, inicio, reactivación e historia. |
+| DG-09 | Base y precedencia de incentivos | `PROVISIONAL_VERBAL_CLARIFICATION` | Aclaración verbal atribuida a Catherine, 2026-09-05; Working Baseline provisional | `NO_APROBADA` | Fórmula oficial, tratamiento de envío/ajustes/devoluciones y precedencia. Para qualification se usa provisionalmente valor después de descuentos y antes de impuestos. |
+| DG-10 | Devoluciones, anulaciones y reversos | `PARCIALMENTE_RESUELTO` | `Commission.reverse()` aislado; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Alcance end-to-end antes/después de pago, saldo negativo y autorización. |
+| DG-11 | Período de calificación | `SIGUE_ABIERTO` | Aclaración verbal 2026-09-05 sólo cubre duración de activación; Working Baseline y Sprint 5 | `NO_APROBADA` | Elegir y documentar período de calificación: calendario, rolling, quincenal u otro. No se infiere de DG-01. |
+| DG-12 | Impuestos y retenciones | `SIGUE_ABIERTO` | SRC-003 sin matriz implementable; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Matriz contable oficial, tasas, bases, sujetos y vigencias. |
+| DG-13 | Regla de envío por más de tres productos | `SIGUE_ABIERTO` | SRC-003 sin implementación fuente; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Unidades/SKU/líneas, destinos, topes y excepciones. |
+| DG-14 | Proveedor de identidad | `SIGUE_ABIERTO` | Java usa Keycloak/JWT; objetivo comercial contempla Google; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Decisión de proveedor y, si aplica, plan de migración. |
+| DG-15 | Proveedor y contrato de confirmación de pago | `SIGUE_ABIERTO` | Java simula pago; no hay gateway/webhook; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Proveedor, checkout, webhook, reembolso, sandbox y conciliación. |
+| DG-16 | Fuente frontend o alcance nuevo | `SIGUE_ABIERTO` | SRC-009 parcial, 2026-09-05: front controller CodeIgniter, CSS/JS y activos; faltan vistas, rutas, controladores y build | `NO_APROBADA` | Confirmar fuente recuperable, alcance UX y estrategia del frontend. |
+| DG-17 | Cardinalidad Platform Actor a perfiles | `SIGUE_ABIERTO` | Foundation Sprint 2 y ausencia de matriz de negocio; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Combinaciones permitidas y provisioning/ownership. |
+| DG-18 | Política de cambio de patrocinador | `PROVISIONAL_VERBAL_CLARIFICATION` | Aclaración verbal de alta confianza suministrada para reconciliación, 2026-09-05; Sprint 4 mantiene rechazo seguro | `NO_APROBADA` | Provisional: sólo administración, con justificación y auditoría. Sigue abierta la semántica de movimiento de subárbol, vigencia e historia financiera. |
+| DG-19 | Autoridad de provisioning de afiliación | `SIGUE_ABIERTO` | SRC-003 y foundation Sprint 4; evidencia vigente a 2026-09-05 | `NO_APROBADA` | Evento/actor autorizador, controles y relación con registro, compra o pago. |
 
-**Condicion para cerrar un gate:** regla de negocio aprobada por VISANA, fuente de verdad identificada, efectos de datos/finanzas definidos y criterios de prueba acordados. El cierre no se infiere de una semilla SQL, documento o binario aislado.
+## Decisiones frontend relacionadas
+
+| ID | Decisión | Estado | Fuente y fecha | Aprobación VISANA | Pendiente explícito |
+|---|---|---|---|---|---|
+| FR-DG-01 | Alcance UX TO-BE | `SIGUE_ABIERTO` | Auditoría frontend parcial, 2026-09-05 | `NO_APROBADA` | Capacidades, journeys y prioridad. |
+| FR-DG-02 | Sitio público vs aplicación autenticada | `SIGUE_ABIERTO` | Auditoría frontend parcial, 2026-09-05 | `NO_APROBADA` | Límites, rutas, SEO, hosting y coexistencia. |
+| FR-DG-03 | Design system / librería UI | `SIGUE_ABIERTO` | CSS/JS legado parcial, 2026-09-05 | `NO_APROBADA` | Tecnología, accesibilidad, tokens y componentes. |
+| FR-DG-04 | Hosting objetivo frontend | `SIGUE_ABIERTO` | Sin decisión evidenciada a 2026-09-05 | `NO_APROBADA` | Plataforma, dominios, CORS, rollback, costo y despliegue. |
+| FR-DG-05 | Paridad visual legado | `SIGUE_ABIERTO` | Activos parciales sin vistas completas, 2026-09-05 | `NO_APROBADA` | Alcance de preservación/rediseño y UAT. |
+
+**Condición para cerrar un gate:** regla aprobada por VISANA, fuente de verdad identificada, efectos de datos/finanzas definidos y criterios de prueba acordados. Ninguna fila de este registro está `APPROVED`.

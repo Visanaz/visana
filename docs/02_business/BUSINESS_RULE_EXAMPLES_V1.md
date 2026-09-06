@@ -1,10 +1,10 @@
-# Ejemplos de reglas de negocio v1
+# Ejemplos de reglas de negocio v1 - evidencia histórica reconciliada
 
-Todos los nombres, personas y valores son sintéticos. Los ejemplos muestran el efecto de una decisión posible; no seleccionan ni implementan una regla.
+Todos los nombres, personas y valores son sintéticos. Los ejemplos muestran el efecto de una decisión posible; no aprueban ni autorizan una regla.
 
 ## Activación
 
-Ana compra COP 200.000 el 15 de agosto. Con “30 días”, estaría activa hasta el 14 de septiembre. Con “mes calendario”, hasta el 31 de agosto. VISANA debe escoger la vigencia y si aplica también a calificación.
+La evidencia verbal provisional más reciente usa `PAYMENT_CONFIRMED`, `paymentConfirmedAt` y un mes calendario mediante `plusMonths(1)`: 05/09/2026 14:35 → 05/10/2026 14:35; 31/01 → fin de febrero a la misma hora local. Siguen pendientes el documento oficial, la hora exacta de expiración, la recompra solapada y el período de calificación DG-11. Este ejemplo no convierte DG-01 en aprobado.
 
 ## Team Sales
 
@@ -16,6 +16,14 @@ A
 ```
 
 Si Team Sales de A incluye toda su downline, podría ser COP 300. Si incluye sólo directos, COP 200. Si no incluye ventas de B/C/D, COP 0. Antes de aplicar descuentos, devoluciones o impuestos se necesita DG-03 y DG-09.
+
+## Base monetaria de qualification
+
+Lista COP 120.000, descuento COP 20.000, impuesto COP 19.000 y envío COP 10.000. La aclaración verbal provisional usa COP 100.000, después de descuentos y antes de impuestos, para qualification. Envío, ajustes, devoluciones, precedencia y fórmula oficial siguen pendientes en DG-09.
+
+## Cambio de patrocinador
+
+B fue patrocinado por A y solicita pasar con C. La aclaración provisional sólo contempla una acción administrativa con justificación y auditoría. No define si B se mueve solo o con su subárbol, ni efectos históricos o financieros; esos puntos de DG-18 permanecen abiertos.
 
 ## Invitación de distribuidor
 

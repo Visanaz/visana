@@ -26,7 +26,7 @@ public class NetworkNodeController {
     }
 
     @PostMapping
-    @Operation(summary = "Create a new network node", description = "Registers a new Affiliate or Distributor in the network under a specific Sponsor (optional for roots).")
+    @Operation(operationId = "createLegacyNetworkNodeBlocked", summary = "Create a legacy network node", description = "LEGACY / BLOCKED: this route always denies creation until affiliation controls are approved; it does not create a node.")
     public ResponseEntity<NetworkNodeResponse> createNode(
             @RequestBody CreateNetworkNodeRequest request,
             @org.springframework.security.core.annotation.AuthenticationPrincipal org.springframework.security.oauth2.jwt.Jwt jwt) {

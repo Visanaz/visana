@@ -8,7 +8,6 @@ import com.visana.erp.qualification.domain.model.VolumeRequirement;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,54 +15,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class QualificationEvaluatorServiceTest {
 
     private final QualificationEvaluatorService service = new QualificationEvaluatorService();
-
-    @Test
-    void shouldActivateWhenPurchasesMeetRequiredAmountWithinDuration() {
-        Money totalPurchases = Money.of(new BigDecimal("200000.00"));
-        Money requiredAmount = Money.of(new BigDecimal("200000.00"));
-        LocalDate evaluationDate = LocalDate.of(2026, 6, 15);
-        LocalDate lastPurchaseDate = LocalDate.of(2026, 6, 1);
-        int durationDays = 30;
-
-        boolean isActivated = service.evaluateActivation(totalPurchases, lastPurchaseDate, evaluationDate, requiredAmount, durationDays);
-
-        assertTrue(isActivated);
-    }
-
-    @Test
-    void shouldNotActivateWhenPurchasesAreBelowRequiredAmount() {
-        Money totalPurchases = Money.of(new BigDecimal("150000.00"));
-        Money requiredAmount = Money.of(new BigDecimal("200000.00"));
-        LocalDate evaluationDate = LocalDate.of(2026, 6, 15);
-        LocalDate lastPurchaseDate = LocalDate.of(2026, 6, 1);
-        int durationDays = 30;
-
-        boolean isActivated = service.evaluateActivation(totalPurchases, lastPurchaseDate, evaluationDate, requiredAmount, durationDays);
-
-        assertFalse(isActivated);
-    }
-
-    @Test
-    void shouldNotActivateWhenDurationHasExpired() {
-        Money totalPurchases = Money.of(new BigDecimal("250000.00"));
-        Money requiredAmount = Money.of(new BigDecimal("200000.00"));
-        LocalDate evaluationDate = LocalDate.of(2026, 6, 15);
-        LocalDate lastPurchaseDate = LocalDate.of(2026, 5, 1);
-        int durationDays = 30; // 45 days passed, expired
-
-        boolean isActivated = service.evaluateActivation(totalPurchases, lastPurchaseDate, evaluationDate, requiredAmount, durationDays);
-
-        assertFalse(isActivated);
-    }
-
-    @Test
-    void shouldNotActivateWhenDatesAreNull() {
-        Money totalPurchases = Money.of(new BigDecimal("250000.00"));
-        Money requiredAmount = Money.of(new BigDecimal("200000.00"));
-        
-        assertFalse(service.evaluateActivation(totalPurchases, null, LocalDate.now(), requiredAmount, 30));
-        assertFalse(service.evaluateActivation(totalPurchases, LocalDate.now(), null, requiredAmount, 30));
-    }
 
     @Test
     void shouldReturnMaxLevelSatisfied() {

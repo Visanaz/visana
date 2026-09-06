@@ -5,6 +5,7 @@ import com.visana.erp.platform.application.identity.IdentityConflictException;
 import com.visana.erp.platform.application.identity.UnlinkedIdentityException;
 import com.visana.erp.platform.application.ownership.OwnershipDeniedException;
 import com.visana.erp.commerce.order.application.OwnedOrderNotFoundException;
+import com.visana.erp.commerce.catalog.application.CatalogProductNotFoundException;
 import com.visana.erp.network.foundation.application.NetworkOperationForbiddenException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -67,8 +68,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return withCorrelation(problemDetail);
     }
 
-    @ExceptionHandler(OwnedOrderNotFoundException.class)
-    public ProblemDetail handleOwnedOrderNotFound(OwnedOrderNotFoundException ex) {
+    @ExceptionHandler({OwnedOrderNotFoundException.class, CatalogProductNotFoundException.class})
+    public ProblemDetail handleResourceNotFound(RuntimeException ex) {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         problemDetail.setTitle("Resource Not Found");
         problemDetail.setType(URI.create("https://visana.com/errors/not-found"));

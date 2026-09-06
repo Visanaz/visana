@@ -1,25 +1,31 @@
-# Business Rules Baseline v1 - borrador para aprobación VISANA
+# Business Rules Baseline v1 - borrador histórico reconciliado para aprobación VISANA
 
-**Estado:** `DRAFT_FOR_VISANA_APPROVAL`
+**Estado:** `HISTORICAL_DRAFT_RECONCILED_FOR_VISANA_APPROVAL` (reconciliado 2026-09-06)
 
-**Propósito:** convertir la evidencia actual en decisiones de negocio explícitas. No aprueba, implementa ni reemplaza una regla existente.
+**Propósito:** conservar el formulario narrativo preparado por PR #8 y convertir evidencia en decisiones explícitas. No aprueba, implementa ni reemplaza una regla existente.
 **Fuente funcional primaria:** `VISANA SAS - Plan de Compensacion-3.pdf`, páginas 1-4 (SRC-003), contrastada con el catálogo, SQL y código documentados. Cuando hay diferencia, se conserva como pregunta; no se escoge una respuesta.
+
+## Relación con la baseline de trabajo
+
+- `BUSINESS_RULES_WORKING_BASELINE_2026-09-05_PROVISIONAL.md` conserva evidencia operacional provisional de alta confianza para desarrollo y pruebas.
+- Este documento es un borrador histórico de aprobación. Sólo podrá convertirse en **Business Rules Baseline v1.0 canónica** cuando VISANA lo firme o entregue evidencia oficial equivalente.
+- Resolver un conflicto Git o incorporar una aclaración verbal no convierte ninguna regla en `APPROVED`.
 
 ## Cómo usar este documento
 
-Cada regla se responde en la sesión indicada. Para cerrar una regla VISANA debe seleccionar una opción o escribir otra, identificar a quien aprueba y fechar la decisión. `PENDIENTE` no es una respuesta aprobada.
+Cada regla se responde en la sesión indicada. Para cerrar una regla VISANA debe seleccionar una opción o escribir otra, identificar a quien aprueba y fechar la decisión. `PENDIENTE` no es una respuesta aprobada. Las aclaraciones provisionales se muestran para evitar perder evidencia más reciente, pero siguen requiriendo confirmación oficial.
 
 ## Decision Session A - Qualification & Volume
 
 ### BR-BASE-001 - Activación y recompra (DG-01, DG-11)
 - **Qué dice el documento actual:** primera compra mínima COP 200.000; recompra mensual mínima COP 100.000. También dice activación por el mes de compra y duración de 30 días.
-- **Qué está claro:** los dos importes. SQL también registra 200.000, 100.000 y 30 días.
-- **Qué está ambiguo:** vigencia, fecha de inicio, tratamiento de compra a mitad de mes y si el período es igual para activación, calificación y bonos.
-- **Pregunta a VISANA:** una compra el día 15, ¿hasta cuándo mantiene activa a la persona?
+- **Evidencia provisional más reciente (2026-09-05):** aclaración verbal atribuida a Catherine: trigger `PAYMENT_CONFIRMED`, inicio `paymentConfirmedAt` y duración de un mes calendario con semántica `plusMonths(1)`. Ejemplos: 05/09/2026 → 05/10/2026 y 31/01 → fin de febrero.
+- **Qué sigue ambiguo:** hora exacta de vencimiento, recompra solapada y documento oficial. DG-11, período de calificación, permanece abierto y no se infiere de la duración de activación.
+- **Pregunta a VISANA:** ¿confirma oficialmente esa activación y cuál es el período independiente de calificación?
 - **Opciones de decisión:** A. 30 días desde compra. B. último día del mes calendario. C. período de corte de pago. D. otra regla documentada.
 - **Ejemplo sencillo:** compra de COP 200.000 el 15 de agosto: A vence el 14 de septiembre; B vence el 31 de agosto.
 - **Impacto de la decisión:** determina quién puede contar como activo, calificar y recibir beneficios futuros.
-- **Decisión seleccionada:** PENDIENTE. **Fecha de aprobación:** PENDIENTE. **Aprobado por:** PENDIENTE. **Estado:** `NEEDS_BUSINESS_DECISION`.
+- **Decisión seleccionada:** PROVISIONAL VERBAL, NO APROBADA. **Fecha de aprobación:** PENDIENTE. **Aprobado por:** PENDIENTE. **Estado:** `PROVISIONAL_VERBAL_CLARIFICATION` para DG-01; DG-11 `NEEDS_BUSINESS_DECISION`.
 
 ### BR-BASE-002 - Definición de Team Sales (DG-03)
 - **Qué dice el documento actual:** los niveles N2-N8 exigen ventas en equipo; no define qué ventas entran.
@@ -34,12 +40,13 @@ Cada regla se responde en la sesión indicada. Para cerrar una regla VISANA debe
 ### BR-BASE-003 - Base de cálculo (DG-09)
 - **Qué dice el documento actual:** los porcentajes se expresan sobre ventas, pero no precisa la base monetaria común.
 - **Qué está claro:** existen porcentajes documentados y configuraciones SQL potenciales.
-- **Qué está ambiguo:** precio lista, subtotal pagado, descuentos, envío, impuestos, devoluciones y puntos PV/CV si VISANA decidiera usarlos.
-- **Pregunta a VISANA:** ¿sobre qué monto se calcula cada incentivo o comisión?
+- **Evidencia provisional más reciente (2026-09-05):** para qualification, valor efectivo después de descuentos y antes de impuestos.
+- **Qué sigue ambiguo:** fórmula oficial, envío, devoluciones, ajustes, puntos PV/CV y precedencia por incentivo o comisión.
+- **Pregunta a VISANA:** ¿confirma oficialmente la fórmula y su alcance por incentivo o comisión?
 - **Opciones de decisión:** A. precio lista. B. subtotal realmente pagado. C. subtotal tras descuentos y sin envío/impuestos. D. PV/CV aprobado. E. otra base.
 - **Ejemplo sencillo:** lista COP 120.000, descuento COP 20.000, envío COP 10.000 e impuesto COP 19.000: VISANA debe elegir cuál monto es la base.
 - **Impacto de la decisión:** evita cálculos dobles, diferencias por descuento y conflictos entre plan, rol y configuración.
-- **Decisión seleccionada:** PENDIENTE. **Fecha de aprobación:** PENDIENTE. **Aprobado por:** PENDIENTE. **Estado:** `NEEDS_BUSINESS_DECISION`.
+- **Decisión seleccionada:** PROVISIONAL VERBAL para qualification, NO APROBADA. **Fecha de aprobación:** PENDIENTE. **Aprobado por:** PENDIENTE. **Estado:** `PROVISIONAL_VERBAL_CLARIFICATION`.
 
 ### BR-BASE-004 - Perfiles de negocio por persona (DG-17)
 - **Qué dice el documento actual:** distingue distribuidores, afiliados, clientes preferentes y consumidores; el sistema técnico no decide su cardinalidad de negocio.
@@ -54,12 +61,13 @@ Cada regla se responde en la sesión indicada. Para cerrar una regla VISANA debe
 ### BR-BASE-005 - Cambio de patrocinador (DG-18)
 - **Qué dice el documento actual:** no define cambio de patrocinador. La foundation técnica lo rechaza de forma segura mientras no exista decisión.
 - **Qué está claro:** no debe cambiarse una relación sin autorización de negocio y sin conservar trazabilidad.
-- **Qué está ambiguo:** si se permite, quién lo autoriza, desde cuándo rige y qué sucede con historia, volumen y beneficios anteriores.
-- **Pregunta a VISANA:** ¿se puede cambiar patrocinador después de afiliarse?
+- **Evidencia provisional más reciente (2026-09-05):** cambio sólo por administración, con justificación y auditoría, como aclaración de alta confianza no aprobada.
+- **Qué sigue ambiguo:** movimiento de subárbol, vigencia y efectos sobre historia, volumen y beneficios anteriores.
+- **Pregunta a VISANA:** ¿confirma oficialmente la excepción administrativa y qué semántica aplica al subárbol?
 - **Opciones de decisión:** A. nunca. B. sólo antes de primera compra/activación. C. sólo administración con justificación. D. bajo condiciones específicas. E. otra.
 - **Ejemplo sencillo:** B fue patrocinado por A y ya hizo compras; solicita pasar con C. VISANA debe indicar si afecta sólo futuro o también historia previa.
 - **Impacto de la decisión:** preserva genealogía, auditoría y futuras métricas de red.
-- **Decisión seleccionada:** PENDIENTE. **Fecha de aprobación:** PENDIENTE. **Aprobado por:** PENDIENTE. **Estado:** `NEEDS_BUSINESS_DECISION`.
+- **Decisión seleccionada:** PROVISIONAL VERBAL, NO APROBADA. **Fecha de aprobación:** PENDIENTE. **Aprobado por:** PENDIENTE. **Estado:** `PROVISIONAL_VERBAL_CLARIFICATION`; movimiento de subárbol `NEEDS_BUSINESS_DECISION`.
 
 ### BR-BASE-006 - Autoridad de afiliación (DG-19)
 - **Qué dice el documento actual:** afiliación otorga código y acceso; no especifica quién ni qué evento crea formalmente al afiliado.
@@ -253,10 +261,11 @@ Cada regla se responde en la sesión indicada. Para cerrar una regla VISANA debe
 
 | Estado | Cantidad |
 |---|---:|
-| NEEDS_BUSINESS_DECISION | 18 |
+| NEEDS_BUSINESS_DECISION | 15 |
+| PROVISIONAL_VERBAL_CLARIFICATION | 3 |
 | TECHNICAL_DECISION | 2 |
 | READY_FOR_APPROVAL | 3 |
 | APPROVED | 0 |
-| **Total** | **23** |
+| **Total de reglas** | **23** |
 
-Sprint 5 no inicia hasta que VISANA apruebe, como mínimo, DG-01, DG-03, DG-09, DG-11, DG-17, DG-18 y DG-19.
+Sprint 5 foundation está implementada. Las reglas siguen provisionales o abiertas y no se autorizan efectos de calificación, compensación, ledger, liquidación ni pago en producción hasta aprobación de VISANA.

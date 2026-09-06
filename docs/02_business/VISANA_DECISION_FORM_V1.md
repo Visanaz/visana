@@ -1,6 +1,17 @@
 # Formulario de decisiones VISANA v1
 
-**Uso:** diligenciar en reunión. Una respuesta por pregunta; adjuntar soporte si la opción es “Otra”. Ninguna fila se considera aprobada sin responsable y fecha.
+**Estado:** `DRAFT_FOR_VISANA_APPROVAL`, reconciliado 2026-09-06.
+
+**Uso:** diligenciar en reunión. Una respuesta por pregunta; adjuntar soporte si la opción es “Otra”. Ninguna fila se considera aprobada sin responsable, fecha y fuente oficial.
+
+## Evidencia provisional que debe confirmarse
+
+- DG-01: `PAYMENT_CONFIRMED`, inicio `paymentConfirmedAt`, duración de un mes calendario; faltan expiración horaria, recompra solapada y documento oficial.
+- DG-09: después de descuentos y antes de impuestos para qualification; falta fórmula oficial y alcance.
+- DG-18: cambio sólo administrativo, con justificación y auditoría; movimiento de subárbol y efectos históricos siguen abiertos.
+- DG-11: período de calificación sigue abierto; no se preselecciona calendario, rolling ni quincenal.
+
+Estas notas no prellenan las columnas de aprobación.
 
 ## Session A - Qualification & Volume
 

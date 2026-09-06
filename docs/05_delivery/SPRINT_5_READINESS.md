@@ -1,12 +1,14 @@
-# Sprint 5 readiness - Qualification & Volume Foundation
+# Sprint 5 readiness - Qualification & Volume Foundation (reconciliado)
 
-**Estado:** `BLOCKED_BY_BUSINESS_RULES`. Este documento no inicia Sprint 5 ni autoriza implementación.
+**Estado:** `FOUNDATION_IMPLEMENTED / PRODUCTION_EFFECTS_NOT_AUTHORIZED`.
 
-## Alcance futuro, si se autoriza
+La foundation técnica fue integrada en `dev` por PR #15. Las reglas de negocio permanecen provisionales o abiertas; este documento no autoriza calificación productiva, compensación, ledger, liquidación ni pago.
 
-Sprint 5 sería únicamente foundation de Qualification + Volume. No incluye cálculo de comisiones ni Rewards/Compensation.
+## Alcance implementado
 
-Flujo de diseño, no implementado:
+Sprint 5 implementó únicamente foundation versionada de Qualification + Volume. No incluye cálculo de comisiones ni Rewards/Compensation.
+
+Flujo de foundation implementado para desarrollo/pruebas controladas:
 
 ```text
 CONFIRMED QUALIFYING SALE
@@ -20,30 +22,31 @@ No se decide todavía qué venta es qualifying.
 
 ## Entradas futuras
 
-| Entrada | Estado actual | Falta antes de construir |
+| Entrada | Estado actual | Falta antes de autorizar efectos productivos |
 |---|---|---|
-| Business profile / network member | Foundation Sprint 4 validada | DG-17 y DG-19 para semántica de negocio |
-| Directos y descendencia | Closure table validada | Regla de conteo de afiliados activos |
-| Ventas personales/volumen | Órdenes actor-owned existentes; no son volumen calificable | DG-03 y DG-09 |
-| Team sales/volumen | No implementado | Definición completa DG-03 |
-| Activación/elegibilidad | Importes documentados; vigencia no decidida | DG-01 y DG-11 |
-| Período | Soporte técnico de fecha existe | Modelo de período aprobado |
-| Reglas de rango | Tabla documental disponible | Team Sales, activación y regla de rango si aplica |
+| Business profile / network member | Foundations Sprint 4/5 validadas | DG-17 y DG-19 oficiales para semántica de negocio |
+| Directos y descendencia | Closure table y lector de subárbol implementados | Regla oficial de conteo/elegibilidad |
+| Ventas personales/volumen | Evidencia monetaria y políticas intercambiables implementadas | DG-03 y DG-09 oficiales |
+| Team sales/volumen | Agregación propia + descendientes implementada como provisional | Definición oficial completa DG-03 |
+| Activación/elegibilidad | `PAYMENT_CONFIRMED` + un mes calendario implementados como provisional | DG-01 oficial; expiración y recompra |
+| Período | Política intercambiable implementada | DG-11 aprobado; no se infiere calendario/rolling/quincenal |
+| Reglas de rango | Umbrales L1-L8 versionados como provisionales | Aprobación de tabla y dependencias de qualification |
 
 ## Ready technically
 
 - V7/Flyway y PostgreSQL en CI validan perfiles, vínculo actor-perfil, miembros, patrocinador inicial y closure table.
 - Las consultas de directos, ancestros y descendientes son autenticadas y limitadas.
 - La foundation preserva estructuras de profundidad mayor a ocho; no incorpora comportamiento económico.
+- V8, reglas versionadas, resultados append-only y guard financiero están implementados; versiones no `APPROVED` no pueden habilitar efectos financieros.
 
-## Blocked by business rule
+## Blocked for production by business rule
 
-- DG-01 activación/recompra.
+- DG-01 documento oficial, expiración y recompra; la regla actual es provisional.
 - DG-03 Team Sales y venta calificable.
-- DG-09 base de cálculo.
-- DG-11 modelo de período.
+- DG-09 fórmula oficial; después de descuentos y antes de impuestos sólo es provisional para qualification.
+- DG-11 modelo de período de calificación, totalmente abierto.
 - DG-17 cardinalidad de perfiles.
-- DG-18 re-parenting.
+- DG-18 movimiento de subárbol; admin-only + justificación + auditoría sólo es provisional.
 - DG-19 autoridad de afiliación.
 
-La autorización posterior debe indicar la fuente de verdad, casos de borde y criterios de aceptación por cada gate.
+La autorización posterior debe indicar fuente de verdad, responsable/fecha de aprobación, casos de borde y criterios de aceptación por gate. Hasta entonces no hay efectos productivos de qualification.
