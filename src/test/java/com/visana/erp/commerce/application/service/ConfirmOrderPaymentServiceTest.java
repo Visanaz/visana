@@ -20,6 +20,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,6 +32,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ConfirmOrderPaymentServiceTest {
+    private static final Instant PAYMENT_CONFIRMED_AT = Instant.parse("2026-09-05T19:35:00Z");
 
     @Mock
     private OrderRepository orderRepository;
@@ -42,7 +46,10 @@ class ConfirmOrderPaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ConfirmOrderPaymentService(orderRepository, eventPublisher);
+        service = new ConfirmOrderPaymentService(
+                orderRepository,
+                eventPublisher,
+                Clock.fixed(PAYMENT_CONFIRMED_AT, ZoneOffset.UTC));
         orderId = OrderId.generate();
         order = new Order(TenantId.generate(), orderId, AffiliateId.generate(), OrderType.PURCHASE);
         order.addItem(new OrderItem(ProductId.generate(), 1, Money.of(new BigDecimal("100.00"))));
@@ -67,6 +74,7 @@ class ConfirmOrderPaymentServiceTest {
         assertEquals(orderId, capturedEvent.orderId());
         assertEquals(order.getAffiliateId(), capturedEvent.affiliateId());
         assertEquals(0, new BigDecimal("100.0000").compareTo(capturedEvent.total().amount()));
+        assertEquals(PAYMENT_CONFIRMED_AT, capturedEvent.paymentConfirmedAt());
     }
 
     @Test

@@ -13,6 +13,7 @@ import com.visana.erp.compensation.application.service.CalculateCommissionsServi
 import com.visana.erp.compensation.domain.service.UnilevelCompensationCalculatorService;
 import com.visana.erp.ledger.domain.service.SettlementService;
 import com.visana.erp.migration.application.service.LegacyDataMigrationService;
+import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -22,8 +23,14 @@ public class UseCaseBeanConfig {
     @Bean
     public ConfirmOrderPaymentUseCase confirmOrderPaymentUseCase(
             OrderRepository orderRepository, 
-            DomainEventPublisher eventPublisher) {
-        return new ConfirmOrderPaymentService(orderRepository, eventPublisher);
+            DomainEventPublisher eventPublisher,
+            Clock clock) {
+        return new ConfirmOrderPaymentService(orderRepository, eventPublisher, clock);
+    }
+
+    @Bean
+    public Clock utcClock() {
+        return Clock.systemUTC();
     }
 
     @Bean

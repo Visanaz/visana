@@ -7,13 +7,20 @@ import com.visana.erp.network.domain.model.AffiliateId;
 
 import com.visana.erp.core.domain.model.TenantId;
 
+import java.time.Instant;
 import java.util.Objects;
 
-public record OrderPaidEvent(TenantId tenantId, OrderId orderId, AffiliateId affiliateId, Money total) implements DomainEvent {
+public record OrderPaidEvent(
+        TenantId tenantId,
+        OrderId orderId,
+        AffiliateId affiliateId,
+        Money total,
+        Instant paymentConfirmedAt) implements DomainEvent {
     public OrderPaidEvent {
         Objects.requireNonNull(tenantId, "TenantId cannot be null");
         Objects.requireNonNull(orderId, "OrderId cannot be null");
         Objects.requireNonNull(affiliateId, "AffiliateId cannot be null");
         Objects.requireNonNull(total, "Total amount cannot be null");
+        Objects.requireNonNull(paymentConfirmedAt, "Payment confirmation timestamp cannot be null");
     }
 }

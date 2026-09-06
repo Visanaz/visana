@@ -4,7 +4,7 @@ Este registro consolida decisiones de negocio y de control que bloquean la evalu
 
 | ID | Decision pendiente | Estado | Evidencia de apertura | Impacto de no decidir |
 |---|---|---|---|---|
-| DG-01 | Vigencia de activacion y recompra | SIGUE_ABIERTO | PDF mes/30 dias; SQL 30; PHP 29/current-month; Java parametrico | Activacion, calificación y comisiones no determinables. |
+| DG-01 | Vigencia de activacion y recompra | PROVISIONAL_VERBAL_CLARIFICATION | Aclaración verbal VISANA 2026-09-05: trigger `PAYMENT_CONFIRMED`, inicio `paymentConfirmedAt`, duración un mes calendario; sin documento oficial. Vencimiento horario y recompra solapada siguen pendientes. | Foundation evaluable en dev/test; no autoriza consecuencias financieras ni cierre APPROVED. |
 | DG-02 | Invitacion de distribuidor: 10% o 3%/5% | SIGUE_ABIERTO | PDF vs `distributor_recruitment_tiers`; sin Java | Regla financiera contractual. |
 | DG-03 | Definicion y fuentes de team sales | SIGUE_ABIERTO | Umbrales PDF/SQL; `counts_for_team_sales=0`; sin ruta Java | Calificacion y volumen bloqueados. |
 | DG-04 | Aprobacion de comisiones | SIGUE_ABIERTO | PHP `pending/approved/paid`; Java sin puente a ledger | Ledger y liquidacion no cerrados. |
@@ -14,7 +14,7 @@ Este registro consolida decisiones de negocio y de control que bloquean la evalu
 | DG-08 | Restriccion por rango/rama | SIGUE_ABIERTO | Solo PDF | Elegibilidad y retroactividad no definidas. |
 | DG-09 | Base y precedencia de incentivos | SIGUE_ABIERTO | Plan base/overrides SQL; Java mapa sin rol | Fuente de verdad financiera no determinable. |
 | DG-10 | Devoluciones/anulaciones | PARCIALMENTE_RESUELTO | `Commission.reverse()` aislado | Alcance financiero/datos no definido. |
-| DG-11 | Mes calendario vs 30 dias rolling | SIGUE_ABIERTO | Variante especifica de DG-01 | Casos limite de vigencia. |
+| DG-11 | Periodo de activacion y calificacion | PARCIALMENTE_ACLARADO / SIGUE_ABIERTO | Activación: aclaración verbal 2026-09-05 indica mes calendario. Período de calificación/corte sigue sin definición oficial. | La activación usa política provisional; snapshots de calificación requieren política de período explícita. |
 | DG-12 | Impuestos / retenciones | SIGUE_ABIERTO | PDF sin implementacion fuente | Payout neto y cumplimiento no definidos. |
 | DG-13 | Regla de envio >3 productos | SIGUE_ABIERTO | PDF sin implementacion fuente | Comercio/operacion no determinables. |
 | DG-14 | Proveedor de identidad: Keycloak o Identity Platform/Firebase Auth | SIGUE_ABIERTO | Java usa Keycloak/JWT; objetivo comercial contempla Google; no hay plan de migracion de usuarios | Identidad, costos, operacion y claims. |
