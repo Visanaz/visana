@@ -35,3 +35,9 @@ Este registro consolida el estado evidenciario vigente, reconciliado el 2026-09-
 | FR-DG-05 | Paridad visual legado | `SIGUE_ABIERTO` | Activos parciales sin vistas completas, 2026-09-05 | `NO_APROBADA` | Alcance de preservación/rediseño y UAT. |
 
 **Condición para cerrar un gate:** regla aprobada por VISANA, fuente de verdad identificada, efectos de datos/finanzas definidos y criterios de prueba acordados. Ninguna fila de este registro está `APPROVED`.
+
+## Clarificación documental previa a Frontend F5 — actualizada 2026-09-07
+
+La clasificación y el impacto de DG-01, DG-03, DG-09, DG-11, DG-18 y DG-19 para F5 se documentan sin crear entradas duplicadas en `docs/02_business/F5_BUSINESS_RULES_DECISION_GATE.md`. El instrumento de respuesta está en `docs/02_business/F5_CLIENT_DECISION_PACKAGE.md` y la secuencia de entrega en `docs/05_delivery/F5_READINESS.md`.
+
+Resultado técnico: `READ_ONLY_SKELETON_ONLY`. Decisión de ejecución del PM: `WAIT_FOR_CLIENT_DECISIONS`. Autorización de implementación: `NOT_AUTHORIZED`. Esta secuencia no crea ni aprueba una regla de negocio; el conteo `APPROVED` permanece en **0**.
