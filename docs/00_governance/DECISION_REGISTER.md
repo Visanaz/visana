@@ -36,17 +36,8 @@ Este registro consolida el estado evidenciario vigente, reconciliado el 2026-09-
 
 **Condición para cerrar un gate:** regla aprobada por VISANA, fuente de verdad identificada, efectos de datos/finanzas definidos y criterios de prueba acordados. Ninguna fila de este registro está `APPROVED`.
 
-## Clarificación documental previa a Frontend F5 — 2026-09-06
+## Clarificación documental previa a Frontend F5 — actualizada 2026-09-07
 
-Esta tabla traduce el estado evidenciario existente a impacto de preparación F5; no cambia ni aprueba ninguna regla.
+La clasificación y el impacto de DG-01, DG-03, DG-09, DG-11, DG-18 y DG-19 para F5 se documentan sin crear entradas duplicadas en `docs/02_business/F5_BUSINESS_RULES_DECISION_GATE.md`. El instrumento de respuesta está en `docs/02_business/F5_CLIENT_DECISION_PACKAGE.md` y la secuencia de entrega en `docs/05_delivery/F5_READINESS.md`.
 
-| ID | Clasificación para el gate F5 | Aprobación | Clarificación de alcance |
-|---|---|---|---|
-| DG-01 | `PARTIAL_CLIENT_DECISION_REQUIRED` | `NO_APROBADA` | La interpretación provisional permite modelado técnico, pero expiración, recompra y fuente oficial bloquean estado activo canónico. |
-| DG-03 | `BLOCKED` | `NO_APROBADA` | Propias + descendientes es provisional; venta calificable, estados y ajustes impiden Team Sales canónica. |
-| DG-09 | `PARTIAL_CLIENT_DECISION_REQUIRED` | `NO_APROBADA` | Neto después de descuentos y antes de impuestos es provisional; falta fórmula oficial por componente y métrica. |
-| DG-11 | `BLOCKED` | `NO_APROBADA` | No existe período de calificación seleccionado; no se confunde con activación ni cortes de pago. |
-| DG-18 | `PARTIAL_CLIENT_DECISION_REQUIRED` | `NO_APROBADA` | Admin-only, justificación y auditoría siguen provisionales; subárbol, vigencia e historia están abiertos. |
-| DG-19 | `BLOCKED` | `NO_APROBADA` | No existe actor o evento oficial que autorice crear/activar afiliación. |
-
-Resultado del gate: `F5 = READ_ONLY_SKELETON_ONLY`. Conteo `APPROVED` permanece en **0**. Véanse `docs/02_business/F5_BUSINESS_RULES_DECISION_GATE.md`, `docs/02_business/F5_CLIENT_DECISION_PACKAGE.md` y `docs/05_delivery/F5_READINESS.md`.
+Resultado técnico: `READ_ONLY_SKELETON_ONLY`. Decisión de ejecución del PM: `WAIT_FOR_CLIENT_DECISIONS`. Autorización de implementación: `NOT_AUTHORIZED`. Esta secuencia no crea ni aprueba una regla de negocio; el conteo `APPROVED` permanece en **0**.

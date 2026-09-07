@@ -1,7 +1,10 @@
 # F5 Readiness — Qualification UI
 
-**Fecha de corte:** 2026-09-06
-**Decisión:** `READ_ONLY_SKELETON_ONLY`
+**Fecha de corte:** 2026-09-07
+**TECHNICAL_READINESS:** `READ_ONLY_SKELETON_ONLY`
+**PM_EXECUTION_DECISION:** `WAIT_FOR_CLIENT_DECISIONS`
+**F5_IMPLEMENTATION_AUTHORIZATION:** `NOT_AUTHORIZED`
+**NEXT_TRIGGER:** recepción y aprobación de las reglas mínimas requeridas para F5
 **Implementación F5:** `NOT_STARTED`
 **Reglas aprobadas:** 0
 
@@ -15,6 +18,8 @@ La foundation backend de Qualification + Volume está integrada, versionada y pr
 - el OpenAPI v1 vigente, SHA-256 `F75B41FAECC92EDFC3974366047D81979147CFF00FB1124471D5BB9EEE9DB720`, no expone endpoints de activación, volumen, Team Sales, calificación o rango.
 
 Por tanto, F5 no puede consumir ni presentar información canónica de calificación.
+
+Aunque técnicamente sería posible preparar un esqueleto sin semántica, el PM decidió no hacerlo: produciría retrabajo sin valor funcional suficiente antes de las decisiones del cliente. Esta es una decisión de secuencia de entrega y no modifica ninguna regla de negocio.
 
 ## Capacidades permitidas si posteriormente se autoriza iniciar sólo el esqueleto
 
@@ -38,7 +43,7 @@ Por tanto, F5 no puede consumir ni presentar información canónica de calificac
 | Mensajes de alta/activación de afiliado | DG-19 | Autoridad y evento de afiliación no definidos |
 | Métricas posteriores a cambio de sponsor | DG-18 | Movimiento de subárbol y vigencia no definidos |
 
-## Condiciones mínimas para reevaluar F5
+## Condiciones mínimas para autorizar F5
 
 - [ ] DG-01 tiene fuente oficial, expiración y recompra solapada definidas.
 - [ ] DG-03 define venta calificable, alcance de red, cancelación, reembolso y momento de inclusión.
@@ -49,7 +54,9 @@ Por tanto, F5 no puede consumir ni presentar información canónica de calificac
 - [ ] El contrato público aprobado expone únicamente los datos requeridos y sus estados.
 - [ ] Se mantiene versionado, vigencia y preservación histórica conforme a ADR-027.
 
-DG-18 y DG-19 no bloquean un esqueleto sólo lectura, pero deben cerrarse antes de habilitar operaciones o mensajes que dependan de cambio de patrocinador o autoridad de afiliación.
+Cumplidas DG-01, DG-03, DG-09, DG-11 y la aprobación de umbrales L1–L8, F5 podrá reevaluarse como `READY_TO_START`. No se exige cerrar todas las reglas abiertas de Plan 3.
+
+DG-18 y DG-19 pueden permanecer abiertas únicamente si F5 es de sólo lectura y no expone mutaciones de patrocinador, creación/activación de afiliaciones ni significado dependiente de esas operaciones.
 
 ## Restricciones de este gate
 

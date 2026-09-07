@@ -1,12 +1,16 @@
 # F5 Business Rules Decision Gate
 
-**Fecha de corte:** 2026-09-06
+**Fecha de corte:** 2026-09-07
 **Estado:** `CLIENT_DECISION_REQUIRED / NO_RULE_APPROVED`
 **Alcance:** gate documental previo a Frontend F5. Este documento no autoriza implementación, uso productivo ni efectos financieros.
 
 ## Resultado del gate
 
 `F5 = READ_ONLY_SKELETON_ONLY`.
+
+`F5_IMPLEMENTATION_AUTHORIZATION = NOT_AUTHORIZED`.
+
+La decisión de ejecución del PM es `WAIT_FOR_CLIENT_DECISIONS`: construir incluso el esqueleto visual antes de cerrar las reglas mínimas produciría retrabajo sin valor funcional suficiente. Es una decisión de secuencia del proyecto, no una regla de negocio.
 
 La foundation backend de Sprint 5 modela reglas versionadas y resultados históricos, pero no expone endpoints públicos de activación, volumen, Team Sales, calificación o rango. Además, DG-01, DG-03, DG-09, DG-11, DG-18 y DG-19 carecen de aprobación oficial. Por ello no existe evidencia suficiente para mostrar métricas o estados de negocio con significado canónico.
 
@@ -25,7 +29,7 @@ Se contrastaron:
 - `SOURCE_REGISTER.md`, `BUSINESS_RULE_CATALOG.md`, `OPEN_BUSINESS_DECISIONS.md` y `DECISION_DEPENDENCY_MAP.md`;
 - contrato `openapi/visana-api-v1.json`, SHA-256 `F75B41FAECC92EDFC3974366047D81979147CFF00FB1124471D5BB9EEE9DB720`.
 
-La precedencia aplicada es: (1) documento oficial escrito/firmado por VISANA, (2) respuesta de VISANA al formulario, (3) aclaración escrita explícita, (4) aclaración verbal documentada como provisional, (5) código/datos históricos y (6) inferencia técnica. Los niveles 4 a 6 nunca se promueven a `APPROVED`.
+La precedencia aplicada es: (1) documento oficial firmado por VISANA, (2) formulario oficial diligenciado por VISANA, (3) aclaración escrita explícita de VISANA, (4) aclaración verbal documentada como provisional, (5) código/datos históricos y (6) inferencia técnica. Ninguna fuente inferior puede reemplazar una superior. Los niveles 4 a 6 nunca se promueven a `APPROVED`.
 
 No se encontró una respuesta escrita/firmada, un formulario diligenciado ni una aclaración escrita que cierre estas seis decisiones. SRC-003 documenta el plan histórico, pero no resuelve de forma canónica los puntos pendientes de este gate.
 
@@ -71,8 +75,40 @@ No puede mostrar ni calcular:
 - simulaciones presentadas como datos reales;
 - resultados provisionales sin una etiqueta y autorización explícitas, que actualmente no existen para frontend.
 
+## Dependencias de decisión
+
+| Decisión | Determina en F5 | Condición actual |
+|---|---|---|
+| DG-01 | Estado de activación y vencimiento | No aprobada |
+| DG-03 | Composición de ventas calificables y Team Sales | No aprobada |
+| DG-09 | Contribución monetaria a volumen/calificación | No aprobada |
+| DG-11 | Ventana temporal de calificación | No aprobada |
+| Confirmación de umbrales L1–L8 | Cálculo y progreso de rango | No aprobada; datos técnicos provisionales |
+| DG-18 | Mutación futura de red por cambio de patrocinador | No bloquea F5 sólo lectura; operación no autorizada |
+| DG-19 | Ciclo de vida y autoridad de afiliación | No bloquea F5 sólo lectura sobre identidad existente; operación no autorizada |
+
+## Gate mínimo para autorizar F5
+
+F5 sólo podrá pasar a `READY_TO_START` cuando DG-01, DG-03, DG-09, DG-11 y los umbrales L1–L8 estén aprobados con metadatos completos y criterios de aceptación trazables. No se exige cerrar todas las reglas abiertas de Plan 3.
+
+DG-18 y DG-19 pueden permanecer abiertas únicamente si el alcance autorizado continúa siendo de sólo lectura y no expone cambios de patrocinador, creación/activación de afiliaciones ni interpretaciones que dependan de esas operaciones.
+
+Además del gate de negocio, cualquier UI funcional requerirá un contrato público aprobado que exponga los datos necesarios; el contrato vigente no los expone.
+
+## Reconciliación de una futura respuesta oficial
+
+Cuando VISANA entregue un documento oficial o el formulario diligenciado:
+
+1. conservar el archivo recibido como evidencia nueva, sin reemplazar fuentes anteriores;
+2. comparar cada campo del paquete por código de decisión;
+3. clasificar el resultado como `MATCH`, `PARTIAL_MATCH`, `CONFLICT` o `NEW_INFORMATION`;
+4. registrar diferencias, fuente, responsable y fecha sin resolver silenciosamente conflictos;
+5. actualizar el Decision Register sólo después de la revisión de gobernanza;
+6. para toda regla aprobada registrar código, versión, `effectiveFrom`, evidencia, aprobador y fecha de aprobación;
+7. crear una nueva versión para efectos futuros y preservar resultados históricos conforme a ADR-027.
+
 ## Condición de salida
 
-El gate sólo puede reevaluarse cuando cada decisión necesaria tenga respuesta canónica, responsable, fecha, versión y fuente oficial; cuando sus casos de borde y criterios de aceptación estén definidos; y cuando el contrato público habilite los datos requeridos. La aprobación debe crear una nueva versión con vigencia explícita y no reinterpretar resultados históricos, conforme a ADR-027.
+El gate sólo puede reevaluarse cuando las decisiones mínimas indicadas tengan respuesta canónica, responsable, fecha, versión, `effectiveFrom` y fuente oficial; cuando sus casos de borde y criterios de aceptación estén definidos; y cuando el contrato público habilite los datos requeridos. La aprobación debe crear una nueva versión con vigencia explícita y no reinterpretar resultados históricos, conforme a ADR-027.
 
 **Invariantes:** reglas `APPROVED`: 0; sin cambio de producción; sin implementación financiera; sin cambio de comportamiento backend; sin cambio frontend; sin cambio de base de datos.
