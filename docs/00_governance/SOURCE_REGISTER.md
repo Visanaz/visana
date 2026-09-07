@@ -11,12 +11,16 @@
 | SRC-007 | `src/test/java` y `target/surefire-reports` | Pruebas y reportes generados | Inspeccionado estaticamente | Hay 19 clases de prueba y 19 XML Surefire versionados que declaran 102 pruebas, 0 fallos/errores. No fueron reejecutados en esta auditoria. |
 | SRC-008 | `.agents/rules/*.md` y `.agents/modules/*.md` | Reglas y documentacion tecnica interna | Inspeccionado | Describe arquitectura Clean/DDD, flujo objetivo y modulos. Es documentacion de intencion; no acredita que el codigo actual ejecute lo descrito. |
 | SRC-009 | `C:\visana_auditoria\visana_frontend` | Entrega frontend legado parcial | Inspeccionado estaticamente | 242 archivos sin Git; contiene front controller CodeIgniter, configuracion Apache, CSS/JS y activos, pero no vistas, rutas, controladores ni manifiesto de build. Ver `docs/07_frontend_audit/FRONTEND_SOURCE_REGISTER.md`. |
+| SRC-010 | Respuesta oficial de Google Forms de Daniel Reina | Decisión funcional digital oficial | Fuente funcional vigente | Respondente: Daniel Reina; rol: Gerente Financiero; área: Gerencia y Contabilidad; respuesta 2026-09-05; timestamp 2026-09-07 09:34:03; aprobación declarada para todo el formulario. `DIGITAL_FUNCTIONAL_DECISION`; `PHYSICAL_RATIFICATION=PENDING`; `EFFECTIVE_FROM_PENDING`. El original externo se referencia de forma inmutable y no se modifica. |
+| SRC-011 | Documento manual diligenciado por Gerencia | Evidencia funcional histórica | Conservado como soporte | Permanece válido como evidencia histórica, pero no reemplaza SRC-010 cuando existe conflicto. No se modifica ni sobrescribe. |
 
 ## Reglas de contraste
 
 1. SRC-001 no sustituye a SRC-003 ni a SRC-004: codigo, documento y SQL describen capas distintas.
 2. SRC-002 sirve para detectar diferencias estructurales, no para confirmar comportamiento de este clon.
 3. Un dato o regla solo se considera validado cuando exista evidencia de ejecucion y criterio de aceptacion; esta fase no produjo esa evidencia.
+4. Para la reconciliación del 2026-09-07, SRC-010 tiene precedencia funcional sobre SRC-011, fuentes verbales, código legado e inferencia técnica.
+5. La respuesta de prueba atribuida a Cristian se excluye por instrucción expresa y no se registra como fuente de negocio.
 
 ## Referencias concretas
 
