@@ -128,4 +128,3 @@ DG-18 y DG-19 pueden permanecer abiertas sólo para un F5 estrictamente de lectu
 | Reglas aprobadas explícitamente | Códigos o ninguna |
 | Análisis de impacto completado | Sí / No / No aplica |
 | Implementación autorizada por separado | Sí / No |
-

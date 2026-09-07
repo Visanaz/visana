@@ -87,4 +87,3 @@ Estas preguntas preservan ADR-027: una aprobación nueva no cambia automáticame
 | Análisis de impacto aceptado | Sí / No / No aplica |
 | Implementación autorizada | Sí / No |
 | Observaciones | |
-
