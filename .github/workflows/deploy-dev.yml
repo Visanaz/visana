@@ -1,0 +1,50 @@
+name: Deploy Backend to Cloud Run (DEV)
+
+on:
+  push:
+    branches:
+      - dev # Cambia esto si tu rama principal de desarrollo se llama 'main' o 'master'
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  REPO_NAME: visana-repo
+  SERVICE_NAME: visana-api-dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 2. Autenticar con Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: 3. Configurar Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: 4. Configurar Docker Auth
+        run: |-
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: 5. Construir y Subir Imagen Docker (Artifact Registry)
+        run: |-
+          IMAGE_TAG=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          docker build -t $IMAGE_TAG .
+          docker push $IMAGE_TAG
+
+      - name: 6. Desplegar en Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          env_vars: |
+            SPRING_PROFILES_ACTIVE=dev
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          flags: '--allow-unauthenticated --port=8080'
