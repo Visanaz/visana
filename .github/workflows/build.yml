@@ -11,13 +11,13 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - name: Verify
-        run: ./mvnw --batch-mode clean verify
+    uses: ./.github/workflows/openapi-contract.yml
+  deploy-dev:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    uses: ./.github/workflows/deploy-dev.yml
+    secrets:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DEV_HEALTHCHECK_CLIENT_SECRET: ${{ secrets.DEV_HEALTHCHECK_CLIENT_SECRET }}

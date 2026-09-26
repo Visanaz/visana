@@ -1,12 +1,8 @@
 name: openapi-contract
 
+# One verification job invoked by build for every supported PR/push.
 on:
-  pull_request:
-    branches: [dev, qa, main]
-    paths: [pom.xml, src/**, openapi/**, .github/workflows/openapi-contract.yml]
-  push:
-    branches: [dev, qa, main]
-    paths: [pom.xml, src/**, openapi/**, .github/workflows/openapi-contract.yml]
+  workflow_call:
 
 permissions:
   contents: read
@@ -21,7 +17,34 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Generate runtime OpenAPI snapshot
-        run: ./mvnw --batch-mode -DskipTests test-compile exec:java -Dexec.args=openapi/visana-api-v1.json
-      - name: Detect OpenAPI contract drift
-        run: git diff --exit-code -- openapi/visana-api-v1.json
+      - name: Validate workflows and deployment guards
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          python3 -B -m unittest discover -s scripts/ci -p 'test_*.py'
+      - name: Require isolated Docker for PostgreSQL integration tests
+        run: docker info > /dev/null
+      - name: Verify backend
+        run: ./mvnw --batch-mode clean verify
+      - name: Require PostgreSQL integration tests to execute
+        run: python3 -B scripts/ci/check_postgres_tests.py target/surefire-reports
+      - name: Generate and verify OpenAPI contract using compiled test classes
+        run: |
+          ./mvnw --batch-mode exec:java -Dexec.args=openapi/visana-api-v1.json
+          git diff --exit-code -- openapi/visana-api-v1.json
+      - name: Prepare the verified executable JAR
+        run: |
+          mkdir -p .ci-artifact
+          cp target/api-multinivel-0.0.1-SNAPSHOT.jar .ci-artifact/app.jar
+          printf '%s\n' "$GITHUB_SHA" > .ci-artifact/source-sha.txt
+          (cd .ci-artifact && sha256sum app.jar > app.jar.sha256)
+          python3 -B scripts/ci/check_artifact.py .ci-artifact "$GITHUB_SHA"
+      - name: Build runtime image from the verified JAR
+        run: docker build --platform linux/amd64 --tag "visana-ci:$GITHUB_SHA" .
+      - name: Upload the verified JAR and provenance for this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-${{ github.sha }}
+          path: .ci-artifact/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7

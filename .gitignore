@@ -3,3 +3,7 @@ target/
 .env
 .idea/
 *.iml
+
+# CI-only packaging and generated Google authentication files.
+.ci-artifact/
+gha-creds-*.json
