@@ -1,5 +1,7 @@
 # Desarrollo local — VISANA
 
+La guía técnica de ejecución, CI/CD, variables y estado cloud se mantiene en el [README principal](../../README.md). Para archivos pendientes en `target/`, conservar la salida Maven aislada indicada abajo.
+
 ## Límite de repositorio
 
 Este repositorio es el backend de VISANA: Java/Spring, PostgreSQL/Flyway, reglas de negocio y el contrato OpenAPI canónico. El código Angular, Node/npm, Playwright y su CI viven en `Visanaz/visana-front`; el frontend no se desarrolla ni se valida aquí. La futura integración consume el snapshot OpenAPI aprobado desde el backend.
@@ -15,7 +17,7 @@ Este repositorio es el backend de VISANA: Java/Spring, PostgreSQL/Flyway, reglas
 En PowerShell, con JDK 21 disponible:
 
 ```powershell
-.\mvnw.cmd --batch-mode clean verify
+.\mvnw.cmd --batch-mode "-Dvisana.build.directory=$env:TEMP\visana-build" verify
 ```
 
 Para preservar los artefactos históricos versionados bajo `target/`, una verificación local puede enviar su salida a una ruta temporal mediante `-Dvisana.build.directory=<ruta-temporal>`.
@@ -32,7 +34,7 @@ Usar `docker compose -f compose.postgres.yml up -d` para una instancia PostgreSQ
 Generate the canonical OpenAPI snapshot with Java 21:
 
 ```text
-./mvnw --batch-mode -DskipTests test-compile exec:java -Dexec.args=openapi/visana-api-v1.json
+./mvnw --batch-mode -Dvisana.build.directory=/tmp/visana-build -DskipTests test-compile exec:java -Dexec.args=/tmp/visana-api-v1.json
 ```
 
-The command starts a local, ephemeral contract context containing the real controllers, Springdoc and security configuration. It does not contact production, Keycloak, or a business database. Review and commit an intentional snapshot diff; the `openapi-contract` workflow regenerates it and fails on drift.
+The command starts a local, ephemeral contract context containing the real controllers, Springdoc and security configuration. It does not contact production, Keycloak, or a business database. It writes a candidate outside the checkout: compare with the canonical snapshot and review any intentional diff before changing that tracked file. `build` calls the reusable `openapi-contract` verification workflow, which generates the snapshot after Maven verification and fails on drift before packaging or DEV deployment.
