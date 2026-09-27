@@ -8,11 +8,13 @@ Backend existente de VISANA: Java/Spring Boot, persistencia y migraciones, módu
 - **VERIFICADO HISTÓRICAMENTE:** el CI del SHA `040ec3f929c15e546571f48fa425736dd83c3b36` pasó el 25 de septiembre de 2026. La imagen fue publicada; el despliegue falló al crear la revisión `visana-api-dev-00001-dwp`.
 - **VERIFICADO EN PR:** [CI 36277138752](https://github.com/Visanaz/visana/actions/runs/36277138752) asociado al head `72bebe3f4b3110a3895b3bf37b89a327d56683d7`, ejecutado sobre su merge temporal: 153 pruebas sin fallos, errores ni omisiones, PostgreSQL aislado, contrato y Docker Linux amd64. CD omitido por tratarse de PR.
 - **CAPTURA CLOUD:** proyecto `visana-erp-dev`, Cloud Run/Artifact Registry/Cloud SQL consultados. Los logs históricos confirmaron URL DataSource inválida y el desajuste adicional 8084/8080. El servicio tiene ingress All y binding allUsers; no exige actualmente token Google.
-- **CORRECCIÓN ACTUAL:** Connector, validación JDBC, PostgreSQL 18 aislado y restricción técnica de salud. El CI anterior no valida estos cambios. [PR #20](https://github.com/Visanaz/visana/pull/20) sigue Draft; no se desplegó ni verificó conexión Cloud SQL real.
+- **CORRECCIÓN ACTUAL:** [CI 36290113720](https://github.com/Visanaz/visana/actions/runs/36290113720), head `c8309ed1c08b8157953e0ea4cb6d69f9b3f90714`: 161 pruebas Java sin fallos/errores/omisiones, diez Python, seis suites PostgreSQL 18.3, migraciones, salud y JWT/JWKS aislados. El mantenimiento JDBC posterior requiere su propio CI. [PR #20](https://github.com/Visanaz/visana/pull/20) sigue Draft; no se desplegó ni verificó conexión Cloud SQL real.
 
 ## Stack y requisitos
 
-Versiones efectivas: Java 21, Spring Boot 3.4.0, Maven 3.9.9, Cloud SQL PostgreSQL Connector **1.30.0**, Flyway Core/PostgreSQL/MySQL **11.14.0**, PostgreSQL JDBC **42.7.4**, Hikari **5.1.0**, Spring Security **6.4.1**, Keycloak Admin Client 26.0.0 y Springdoc 2.7.0. Flyway 10.20.1 declaraba PostgreSQL probado hasta 17; el módulo 11.14.0 declara 18. Se actualiza solo ese conjunto coherente; no Spring ni el driver. El contexto MySQL permanece separado de la evidencia histórica.
+Versiones efectivas: Java 21, Spring Boot 3.4.0, Maven 3.9.9, Cloud SQL PostgreSQL Connector **1.30.0**, Flyway Core/PostgreSQL/MySQL **11.14.0**, PostgreSQL JDBC **42.7.13**, Hikari **5.1.0**, Spring Security **6.4.1**, Keycloak Admin Client 26.0.0 y Springdoc 2.7.0. Flyway 11.14.0 declara PostgreSQL probado hasta 18. JDBC cambia desde 42.7.4 mediante `postgresql.version` del parent; Boot mantiene su gestión de Spring/Security. El contexto MySQL permanece separado de la evidencia histórica.
+
+Revisión acotada: 42.7.13 incluye correcciones posteriores a CVE-2025-49146 (SCRAM/CPU y channel binding). Su compatibilidad se verifica en CI con PostgreSQL 18.3, Connector empaquetado y Flyway; no demuestra conexión cloud ni ausencia de vulnerabilidades. Boot 3.4.x terminó soporte abierto y Security 6.4.1 conserva un aviso pertinente sobre cabeceras HTTP. La [guía cloud](docs/04_architecture/CLOUD_ARCHITECTURE.md#revisión-acotada-de-dependencias) documenta condiciones y la decisión de soporte/migración pendiente, sin actualizar Spring de forma independiente.
 
 Desarrollo: JDK 21, Maven Wrapper y configuración externa del entorno. Docker con motor Linux es necesario para las cinco suites PostgreSQL con Testcontainers y para construir la imagen. Los archivos `.env` no son cargados automáticamente por Maven/Spring: exportar las variables al proceso sin publicarlas.
 
@@ -59,7 +61,7 @@ El perfil `dev` usa exclusivamente el conector para Cloud SQL; requiere configur
 | `DEV_HEALTHCHECK_SUBJECT` | Sujeto firmado e inmutable del cliente técnico; permite reconocerlo aun sin scope/azp | Nuevo campo mínimo, pendiente del IdP |
 | `DEV_HEALTHCHECK_AUDIENCE` | Audience dedicada para salud, sin imponerla globalmente a usuarios humanos | Nuevo campo mínimo, pendiente del IdP |
 | `DEV_DB_PASSWORD_SECRET_REF` | Referencia aprobada `nombre-secreto:VERSION_NUMERICA` | Nueva fuente; no se inventa recurso ni versión |
-| `DEV_DB_CREDENTIAL_ROTATION_CONFIRMED` | `true` tras confirmación del responsable de rotación PostgreSQL y rechazo de la credencial anterior | Gate administrativo; no prueba conexión |
+| `DEV_DB_CREDENTIAL_ROTATION_CONFIRMED` | `true` tras cierre documentado por el responsable de rotación/revocación PostgreSQL | Gate administrativo; no prueba revocación ni conexión; no probar la contraseña antigua |
 
 Contrato único de `DB_URL` (plantilla; **no cargar el placeholder**):
 
