@@ -91,7 +91,6 @@ jobs:
           SERVICE_URL: ${{ steps.deploy.outputs.url }}
         run: |
           umask 077
-          revision="$SERVICE_NAME-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           python3 -B scripts/ci/cloud_run_dev.py capture-revision "$RUNNER_TEMP/revision.json"
           python3 -B scripts/ci/cloud_run_dev.py capture-service "$RUNNER_TEMP/service-after.json"
           python3 -B scripts/ci/cloud_run_dev.py revision "$RUNNER_TEMP/revision.json" "$RUNNER_TEMP/service-after.json"
@@ -103,4 +102,4 @@ jobs:
           echo "Inspect service $SERVICE_NAME in region $REGION; candidate revision $SERVICE_NAME-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT."
       - name: Remove transient configuration and tokens
         if: always()
-        run: rm -f "$RUNNER_TEMP/service-before.json" "$RUNNER_TEMP/service-after.json" "$RUNNER_TEMP/revision.json" "$RUNNER_TEMP/dev-env.json" "$RUNNER_TEMP/cloud-run-token"
+        run: rm -f "$RUNNER_TEMP/service-before.json" "$RUNNER_TEMP/service-after.json" "$RUNNER_TEMP/revision.json" "$RUNNER_TEMP/dev-env.json"
