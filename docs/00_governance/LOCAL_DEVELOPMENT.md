@@ -2,6 +2,8 @@
 
 La guía técnica de ejecución, CI/CD, variables y estado cloud se mantiene en el [README principal](../../README.md). Para archivos pendientes en `target/`, conservar la salida Maven aislada indicada abajo.
 
+El cierre DEV y la preparación de aprobación del PR #20 se mantienen en la [guía cloud existente](../04_architecture/CLOUD_ARCHITECTURE.md#cierre-de-configuración-dev--26-de-septiembre-de-2026). GitHub no tiene Environments ni variables de repositorio en la consulta del 26 de septiembre de 2026; el reusable consume variables de repositorio y secretos explícitos del caller. No trasladar credenciales de Actions al computador ni usar Cloud SQL real para validar configuración. Los checks del SHA revisado ya están disponibles; cambios solo documentales no requieren repetir Maven local, pero deben comprobarse los checks del nuevo SHA publicado.
+
 ## Límite de repositorio
 
 Este repositorio es el backend de VISANA: Java/Spring, PostgreSQL/Flyway, reglas de negocio y el contrato OpenAPI canónico. El código Angular, Node/npm, Playwright y su CI viven en `Visanaz/visana-front`; el frontend no se desarrolla ni se valida aquí. La futura integración consume el snapshot OpenAPI aprobado desde el backend.

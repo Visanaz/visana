@@ -6,7 +6,8 @@ Backend existente de VISANA: Java/Spring Boot, persistencia y migraciones, módu
 
 - **IMPLEMENTADO:** CI de backend/contrato y empaquetado; CD DEV condicionado al éxito de esa verificación y a configuración externa explícita.
 - **VERIFICADO HISTÓRICAMENTE:** el CI del SHA `040ec3f929c15e546571f48fa425736dd83c3b36` pasó el 25 de septiembre de 2026. La imagen fue publicada; el despliegue falló al crear la revisión `visana-api-dev-00001-dwp`.
-- **PENDIENTE:** logs internos de esa revisión, configuración efectiva de Cloud SQL y validación cloud del nuevo pipeline. Los resultados del nuevo commit deben consultarse en su PR; este README no acredita un despliegue exitoso.
+- **VERIFICADO EN PR:** [CI 36277138752](https://github.com/Visanaz/visana/actions/runs/36277138752) asociado al head `72bebe3f4b3110a3895b3bf37b89a327d56683d7`, ejecutado sobre su merge temporal: 153 pruebas sin fallos, errores ni omisiones, PostgreSQL aislado, contrato y Docker Linux amd64. CD omitido por tratarse de PR.
+- **PENDIENTE:** configuración efectiva cloud y validación del CD. [PR #20](https://github.com/Visanaz/visana/pull/20) permanece Draft; comprobar sus checks si cambia el SHA. La ausencia de logs antiguos limita el diagnóstico y no bloquea por sí sola un nuevo despliegue aprobado.
 
 ## Stack y requisitos
 
@@ -57,6 +58,10 @@ Arranque de desarrollo, después de configurar una BD aislada y un issuer real a
 
 El preflight falla sin mostrar valores si faltan fuentes externas. Rechaza URLs localhost, credenciales en JDBC, cambios de identidad y overrides de DataSource/Flyway/servidor o argumentos que requieren revisión. Las variables y secretos existentes ajenos se conservan mediante `merge`. Una referencia existente a Secret Manager no se reemplaza por contraseña literal. La migración de una contraseña literal a Secret Manager requiere recurso, versión y permisos verificados fuera de esta tarea.
 
+Consulta de GitHub del 26 de septiembre de 2026: **cero variables de repositorio, cero Environments y solo tres secretos** (`GCP_PROJECT_ID`, `GCP_CREDENTIALS`, `DB_PASSWORD`, metadata de actualización del 25 de septiembre). Están ausentes las cinco variables de la tabla y `DEV_HEALTHCHECK_CLIENT_SECRET`; la existencia de un secreto no verifica su contenido ni sus permisos. Los workflows no declaran `environment:`: la carga propuesta corresponde a **Settings → Secrets and variables → Actions → Repository**, con los cuatro secretos pasados explícitamente desde `build.yml`. No crear un Environment llamado `dev` por suposición.
+
+La [matriz de cierre DEV](docs/04_architecture/CLOUD_ARCHITECTURE.md#cierre-de-configuración-dev--26-de-septiembre-de-2026) identifica consumidores/líneas, etapas A/B/C, fuentes consultadas, permisos por recurso y acciones concretas para aprobación. Digest, URL y tokens efímeros se producen durante el run; no son variables ni secretos permanentes que deba cargar Cristian.
+
 ## CI, ramas y CD
 
 1. `build.yml` es la entrada para PR y push de `dev`, `qa` y `main`. Un PR prueba su commit de integración propuesto; no cambia el checkout a `dev`.
@@ -84,6 +89,8 @@ La instancia reportada `visana-db-dev` **no es el nombre de la BD PostgreSQL**. 
 - Usuario PostgreSQL: autentica a BD y requiere los permisos de aplicación/Flyway aprobados, independientes de IAM.
 - Cliente de salud OIDC: principal técnico autorizado; la tarea no crea clientes ni cambia realm. `/actuator/health` continúa protegido. Se obtiene un token por `client_credentials` usando discovery HTTPS; no se persisten tokens de aplicación. `X-Serverless-Authorization` lleva la identidad Google y `Authorization` el bearer OIDC. Un 401 no pasa la validación.
 
+El endpoint de salud no exige rol de negocio; tampoco implementa un permiso exclusivo de salud ni validación explícita de audience del JWT de aplicación. Usar un cliente técnico existente si satisface el contrato; crear uno requiere decisión del responsable. La audience del ID token Google es la URL del servicio, sin `/actuator/health`. Las probes de plataforma son distintas: una probe HTTP sin bearer válido hacia este endpoint protegido falla; consultar las probes heredadas antes de aprobar. El runner público necesita alcanzar el issuer y la URL directa del servicio: IAM correcto no elimina las restricciones de ingress. No cambiar ingress ni exposición para facilitar la prueba.
+
 ## Diagnóstico, verificación y reversión
 
 La guía [CLOUD_ARCHITECTURE](docs/04_architecture/CLOUD_ARCHITECTURE.md) registra evidencia y pendientes del primer despliegue. Consultar primero run/SHA/digest y **la revisión fallida**, no asumir que la última revisión lista es aquella. Con acceso de lectura y proyecto verificado:
@@ -103,6 +110,6 @@ El arranque conserva Flyway y puede aplicar las migraciones existentes al ambien
 
 ## Limitaciones actuales
 
-No se dispone aquí de gcloud ni sesión cloud comprobada. El proyecto aparece enmascarado en Actions; los logs de la revisión, usuario/BD/conectividad Cloud SQL y cuenta runtime permanecen pendientes. GitHub contiene los tres secretos históricos, pero no las variables ni el cliente de salud nuevos. El PR debe permanecer Draft hasta revisar estos requisitos y la evidencia cloud. La alineación del puerto corrige un defecto demostrado en archivos; no confirma por sí sola la causa histórica.
+No se dispone aquí de gcloud; Google Cloud Console pidió iniciar sesión. El usuario indicó continuar con acceso cloud pendiente. No se consultaron recursos cloud autenticados ni se recibió un 403 cloud: su existencia/configuración actual sigue **sin acceso**, no ausente. El proyecto aparece enmascarado en Actions; los logs de la revisión, usuario/BD/conectividad Cloud SQL, IAM, ingress, probes y cuenta runtime permanecen pendientes. GitHub sí fue consultado y sus faltantes son concretos. La protección de `dev` devolvió 404 y rulesets 403 con limitación de plan; no se confirmó un gate obligatorio ni se cambió. El PR permanece Draft. La alineación del puerto corrige un defecto demostrado en archivos; no confirma por sí sola la causa histórica.
 
 Fuentes técnicas: [contrato del contenedor Cloud Run](https://docs.cloud.google.com/run/docs/container-contract), [inputs de deploy-cloudrun v2](https://raw.githubusercontent.com/google-github-actions/deploy-cloudrun/v2/action.yml), [workflows reutilizables](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows), [autenticación entre servicios Cloud Run](https://docs.cloud.google.com/run/docs/authenticating/service-to-service), [endpoints y client credentials de Keycloak](https://www.keycloak.org/securing-apps/oidc-layers).
