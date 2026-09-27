@@ -40,7 +40,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class PostgreSqlCatalogProductDetailIntegrationTest {
-    @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18.3-alpine");
+
+    @org.junit.jupiter.api.BeforeAll
+    static void verifyRealServerVersion() throws Exception {
+        try (var connection = java.sql.DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            org.junit.jupiter.api.Assertions.assertEquals(18, connection.getMetaData().getDatabaseMajorVersion());
+            System.out.println("POSTGRESQL18_EVIDENCE " + connection.getMetaData().getDatabaseProductVersion());
+        }
+    }
 
     @DynamicPropertySource static void datasource(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);

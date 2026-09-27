@@ -7,11 +7,12 @@ Backend existente de VISANA: Java/Spring Boot, persistencia y migraciones, módu
 - **IMPLEMENTADO:** CI de backend/contrato y empaquetado; CD DEV condicionado al éxito de esa verificación y a configuración externa explícita.
 - **VERIFICADO HISTÓRICAMENTE:** el CI del SHA `040ec3f929c15e546571f48fa425736dd83c3b36` pasó el 25 de septiembre de 2026. La imagen fue publicada; el despliegue falló al crear la revisión `visana-api-dev-00001-dwp`.
 - **VERIFICADO EN PR:** [CI 36277138752](https://github.com/Visanaz/visana/actions/runs/36277138752) asociado al head `72bebe3f4b3110a3895b3bf37b89a327d56683d7`, ejecutado sobre su merge temporal: 153 pruebas sin fallos, errores ni omisiones, PostgreSQL aislado, contrato y Docker Linux amd64. CD omitido por tratarse de PR.
-- **PENDIENTE:** configuración efectiva cloud y validación del CD. [PR #20](https://github.com/Visanaz/visana/pull/20) permanece Draft; comprobar sus checks si cambia el SHA. La ausencia de logs antiguos limita el diagnóstico y no bloquea por sí sola un nuevo despliegue aprobado.
+- **CAPTURA CLOUD:** proyecto `visana-erp-dev`, Cloud Run/Artifact Registry/Cloud SQL consultados. Los logs históricos confirmaron URL DataSource inválida y el desajuste adicional 8084/8080. El servicio tiene ingress All y binding allUsers; no exige actualmente token Google.
+- **CORRECCIÓN ACTUAL:** Connector, validación JDBC, PostgreSQL 18 aislado y restricción técnica de salud. El CI anterior no valida estos cambios. [PR #20](https://github.com/Visanaz/visana/pull/20) sigue Draft; no se desplegó ni verificó conexión Cloud SQL real.
 
 ## Stack y requisitos
 
-Versiones del repositorio: Java 21, Spring Boot 3.4.0, Maven Wrapper 3.3.2 con Maven 3.9.9, PostgreSQL JDBC y Flyway administrados por Spring Boot, Keycloak Admin Client 26.0.0 y Springdoc 2.7.0. El driver y las migraciones MySQL se conservan para el contexto legacy; no ejecutar contra evidencia histórica.
+Versiones efectivas: Java 21, Spring Boot 3.4.0, Maven 3.9.9, Cloud SQL PostgreSQL Connector **1.30.0**, Flyway Core/PostgreSQL/MySQL **11.14.0**, PostgreSQL JDBC **42.7.4**, Hikari **5.1.0**, Spring Security **6.4.1**, Keycloak Admin Client 26.0.0 y Springdoc 2.7.0. Flyway 10.20.1 declaraba PostgreSQL probado hasta 17; el módulo 11.14.0 declara 18. Se actualiza solo ese conjunto coherente; no Spring ni el driver. El contexto MySQL permanece separado de la evidencia histórica.
 
 Desarrollo: JDK 21, Maven Wrapper y configuración externa del entorno. Docker con motor Linux es necesario para las cinco suites PostgreSQL con Testcontainers y para construir la imagen. Los archivos `.env` no son cargados automáticamente por Maven/Spring: exportar las variables al proceso sin publicarlas.
 
@@ -28,9 +29,9 @@ python -B -m unittest discover -s scripts/ci -p 'test_*.py'
 
 En CI se usa `./mvnw --batch-mode clean verify` exclusivamente en un runner independiente. CI exige Docker y comprueba que las suites PostgreSQL ejecutaron pruebas sin saltos; la ausencia de Docker local puede producir pruebas omitidas y no equivale a validación PostgreSQL.
 
-Verificación local de esta corrección (2026-09-26): Maven verify con Microsoft OpenJDK 21.0.12 y salida externa, 153 pruebas, cero errores/fallos, seis omitidas por Docker ausente. Las tres pruebas de puerto pasaron; también seis pruebas de guards y actionlint 1.7.7. La construcción Docker y PostgreSQL se verifican por separado en el CI del PR, sin sustituir este límite local.
+Verificación local de esta corrección: Java 21.0.11 y salida externa, **160 pruebas, cero errores/fallos, siete omitidas por Docker ausente**; diez pruebas Python de guards pasaron. La cobertura PostgreSQL corresponde al CI del nuevo SHA. Las seis suites usan `postgres:18.3-alpine` y comprueban por JDBC su versión real. La suite de ciclo de vida verifica BD vacía, V1–V8, historial válido, segundo arranque sin reaplicar y salud UP/DOWN/UP con fallo sintético controlado. No se usa Cloud SQL ni credenciales Google.
 
-Arranque de desarrollo, después de configurar una BD aislada y un issuer real accesible (requiere esas dependencias; no se acredita aquí su arranque):
+El perfil `dev` usa exclusivamente el conector para Cloud SQL; requiere configuración externa aprobada. Para una BD TCP aislada utilizar la configuración local/test correspondiente, sin Google ADC. El siguiente comando DEV no debe ejecutarse contra la instancia real sin autorización de despliegue/migraciones:
 
 ```powershell
 .\mvnw.cmd "-Dvisana.build.directory=$env:TEMP\visana-build" spring-boot:run "-Dspring-boot.run.profiles=dev"
@@ -46,27 +47,39 @@ Arranque de desarrollo, después de configurar una BD aislada y un issuer real a
 |---|---|---|
 | `SPRING_PROFILES_ACTIVE` | Workflow fija `dev` | Obligatorio |
 | `PORT` | Cloud Run lo proporciona; fallback local 8084 | No definir en GitHub |
-| `DB_URL` | Variable GitHub del mismo nombre; URL JDBC PostgreSQL TCP, BD real y ruta de red verificadas por operador | Obligatorio, actualmente pendiente |
+| `DB_URL` | URL JDBC del conector oficial, sin host ni credenciales; contrato debajo | Base aprobada pendiente |
 | `DB_USER` | Variable GitHub del mismo nombre; usuario PostgreSQL real | Obligatorio, actualmente pendiente |
-| `DB_PASSWORD` | Secret GitHub existente; si el servicio ya utiliza Secret Manager, se conserva su referencia y se omite el valor literal | Obligatorio según origen existente |
+| `DB_PASSWORD` | Credencial PostgreSQL rotada, consumida por Secret Manager en la revisión futura | No usar el literal expuesto ni copiarlo desde GitHub |
 | `KEYCLOAK_ISSUER_URI` | Variable GitHub del mismo nombre; issuer HTTPS externo verificado | Obligatorio, actualmente pendiente |
 | `GCP_PROJECT_ID` | Secret GitHub existente, usado como proyecto explícito | Existente; valor no reproducido |
 | `GCP_CREDENTIALS` | Secret GitHub existente para la identidad que publica/despliega | Existente; clave no reproducida |
-| `DEV_RUNTIME_SERVICE_ACCOUNT` | Variable GitHub con la cuenta **actual** de ejecución, no la cuenta de despliegue ni el usuario de BD | Pendiente de metadata real |
+| `DEV_RUNTIME_SERVICE_ACCOUNT` | Cuenta actual comprobada `984938781030-compute@developer.gserviceaccount.com` | Carga y permisos efectivos pendientes |
 | `DEV_HEALTHCHECK_CLIENT_ID` | Variable GitHub de un cliente técnico OIDC autorizado para comprobar salud | Pendiente de identificar/proveer por responsable |
 | `DEV_HEALTHCHECK_CLIENT_SECRET` | Secret GitHub de ese cliente; se usa solo para obtener un bearer efímero | Pendiente; no enviar por chat |
+| `DEV_HEALTHCHECK_SUBJECT` | Sujeto firmado e inmutable del cliente técnico; permite reconocerlo aun sin scope/azp | Nuevo campo mínimo, pendiente del IdP |
+| `DEV_HEALTHCHECK_AUDIENCE` | Audience dedicada para salud, sin imponerla globalmente a usuarios humanos | Nuevo campo mínimo, pendiente del IdP |
+| `DEV_DB_PASSWORD_SECRET_REF` | Referencia aprobada `nombre-secreto:VERSION_NUMERICA` | Nueva fuente; no se inventa recurso ni versión |
+| `DEV_DB_CREDENTIAL_ROTATION_CONFIRMED` | `true` tras confirmación del responsable de rotación PostgreSQL y rechazo de la credencial anterior | Gate administrativo; no prueba conexión |
 
-El preflight falla sin mostrar valores si faltan fuentes externas. Rechaza URLs localhost, credenciales en JDBC, cambios de identidad y overrides de DataSource/Flyway/servidor o argumentos que requieren revisión. Las variables y secretos existentes ajenos se conservan mediante `merge`. Una referencia existente a Secret Manager no se reemplaza por contraseña literal. La migración de una contraseña literal a Secret Manager requiere recurso, versión y permisos verificados fuera de esta tarea.
+Contrato único de `DB_URL` (plantilla; **no cargar el placeholder**):
 
-Consulta de GitHub del 26 de septiembre de 2026: **cero variables de repositorio, cero Environments y solo tres secretos** (`GCP_PROJECT_ID`, `GCP_CREDENTIALS`, `DB_PASSWORD`, metadata de actualización del 25 de septiembre). Están ausentes las cinco variables de la tabla y `DEV_HEALTHCHECK_CLIENT_SECRET`; la existencia de un secreto no verifica su contenido ni sus permisos. Los workflows no declaran `environment:`: la carga propuesta corresponde a **Settings → Secrets and variables → Actions → Repository**, con los cuatro secretos pasados explícitamente desde `build.yml`. No crear un Environment llamado `dev` por suposición.
+```text
+jdbc:postgresql:///<BASE_APROBADA>?socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlInstance=visana-erp-dev:us-central1:visana-db-dev&ipTypes=PUBLIC&cloudSqlRefreshStrategy=lazy&enableIamAuth=false
+```
 
-La [matriz de cierre DEV](docs/04_architecture/CLOUD_ARCHITECTURE.md#cierre-de-configuración-dev--26-de-septiembre-de-2026) identifica consumidores/líneas, etapas A/B/C, fuentes consultadas, permisos por recurso y acciones concretas para aprobación. Digest, URL y tokens efímeros se producen durante el run; no son variables ni secretos permanentes que deba cargar Cristian.
+La base debe ser un identificador ASCII simple aprobado por el DBA; no elegir `postgres`. Guards Python y Java exigen exactamente esos cinco parámetros, sin duplicados, overrides, credenciales o factories alternativas. El conector recibe Google ADC de la identidad runtime y establece TLS autenticado. No se configuran opciones que desactiven TLS, archivos JSON, autenticación IAM PostgreSQL, VPC, NAT, proxy, Unix socket ni `--add-cloudsql-instances`. [Contrato oficial 1.30.0](https://github.com/GoogleCloudPlatform/cloud-sql-jdbc-socket-factory/blob/v1.30.0/docs/jdbc.md).
+
+El CD no consume ya el secreto GitHub `DB_PASSWORD`: exige referencia Secret Manager fija y atestación de rotación, sin trasladar literales a archivos temporales. Conserva configuración ajena mediante merge y rechaza overrides de identidad/DataSource/Flyway/seguridad/JVM. Los diagnósticos capturan JSON en memoria y escriben solo campos permitidos; excluyen contraseñas, valores desconocidos, cuerpos HTTP y argumentos. Las excepciones no imprimen valores ni URLs.
+
+Consulta previa a esta corrección: cero variables de repositorio y secretos `GCP_PROJECT_ID`, `GCP_CREDENTIALS`, `DB_PASSWORD`; ninguna carga externa se realizó. Todas las variables de la tabla y el secreto del cliente siguen pendientes. `build.yml` pasa ahora tres secretos: proyecto, desplegador y cliente OIDC. No se selecciona ni crea un Environment.
+
+La [guía cloud](docs/04_architecture/CLOUD_ARCHITECTURE.md) identifica fuentes consultadas, permisos por recurso y decisiones externas. Digest, URL y bearer efímero se producen durante el run; no son secretos permanentes que deba cargar el operador.
 
 ## CI, ramas y CD
 
 1. `build.yml` es la entrada para PR y push de `dev`, `qa` y `main`. Un PR prueba su commit de integración propuesto; no cambia el checkout a `dev`.
 2. Invoca `openapi-contract.yml`, ahora reutilizable: actionlint, pruebas de guards, Maven verify, suites PostgreSQL obligatorias, generación OpenAPI con clases compiladas y comprobación de drift.
-3. Produce el JAR ejecutable, SHA de origen y checksum; comprueba launcher/driver PostgreSQL y construye una imagen Linux amd64. El artefacto tiene nombre `backend-<SHA>` y pertenece al mismo run.
+3. Produce el JAR ejecutable, SHA de origen y checksum; comprueba launcher, driver, Connector y Flyway coherente; construye una imagen Linux amd64. El artefacto tiene nombre `backend-<SHA>` y pertenece al mismo run.
 4. Solo un **push integrado en dev**, después de `needs: verify`, invoca el workflow reutilizable `deploy-dev.yml`. PR, ramas de corrección, `qa` y `main` no ejecutan CD DEV. No hay trigger manual ni `pull_request_target`.
 5. CD verifica el artefacto, consulta el servicio existente, confirma su cuenta de ejecución, publica y despliega por digest. La concurrencia del servicio evita despliegues simultáneos. Conserva la autenticación existente por clave; no agrega permisos OIDC ni configura WIF.
 6. Comprueba la revisión específica, readiness, digest, perfil/configuración, cuenta de ejecución y tráfico hacia esa revisión. Después exige HTTP 200 y JSON `status=UP` en `/actuator/health` con autenticación de Spring y Cloud Run separadas.
@@ -79,7 +92,7 @@ El Dockerfile empaqueta únicamente `.ci-artifact/app.jar`, previamente validado
 
 Destino comprobado en workflow/logs: servicio `visana-api-dev`, región `us-central1`, Artifact Registry `visana-repo`. Proyecto real y cuenta runtime aún requieren consulta de metadata; no se deducen del repositorio. El workflow exige que el servicio exista antes de desplegar y conserva IAM/exposición pública, redes y conectividad. Eliminó el flag que imponía `--allow-unauthenticated`.
 
-La instancia reportada `visana-db-dev` **no es el nombre de la BD PostgreSQL**. Instancia, connectionName, BD, usuario y región de Cloud SQL deben verificarse por separado. El código utiliza JDBC TCP con driver PostgreSQL; no incluye Java Connector ni proxy implementado. La viabilidad de TCP/VPC/TLS queda pendiente de infraestructura real. No se añadió `postgres-socket-factory`, `--add-cloudsql-instances` ni autenticación IAM de BD por hipótesis.
+La instancia comprobada `visana-db-dev` **no es el nombre de la BD PostgreSQL**. Solo se observaron base y usuario `postgres`; no se seleccionan para VISANA. El Connector resuelve `visana-erp-dev:us-central1:visana-db-dev` y selecciona PUBLIC; Hikari y Flyway comparten URL y credenciales. La dependencia y módulos de migración se comprueban dentro del JAR final. Esto no acredita conexión real.
 
 ## Identidades y permisos
 
@@ -87,9 +100,9 @@ La instancia reportada `visana-db-dev` **no es el nombre de la BD PostgreSQL**. 
 - Cuenta de despliegue de `GCP_CREDENTIALS`: debe disponer de los permisos existentes para Artifact Registry y Cloud Run y `iam.serviceAccounts.actAs` sobre la cuenta runtime; para invocación privada, `run.routes.invoke`. Revisar concesiones concretas sin ampliarlas automáticamente.
 - Cuenta runtime: debe coincidir con el servicio consultado. Secret Manager requiere `secretmanager.versions.access` sobre el secreto referenciado. `cloudsql.instances.connect` corresponde si la estrategia aprobada emplea integración Cloud SQL/proxy/connector; no crea conectividad VPC ni autentica al usuario PostgreSQL.
 - Usuario PostgreSQL: autentica a BD y requiere los permisos de aplicación/Flyway aprobados, independientes de IAM.
-- Cliente de salud OIDC: principal técnico autorizado; la tarea no crea clientes ni cambia realm. `/actuator/health` continúa protegido. Se obtiene un token por `client_credentials` usando discovery HTTPS; no se persisten tokens de aplicación. `X-Serverless-Authorization` lleva la identidad Google y `Authorization` el bearer OIDC. Un 401 no pasa la validación.
+- Cliente de salud OIDC: contrato propuesto, no provisionado ni validado en IdP real. Se obtiene bearer por `client_credentials`/discovery HTTPS y scope propuesto `visana.health`; no se persiste. `Authorization` lleva el JWT. No se exige token Google en el checker porque el servicio observado tiene allUsers; privatizarlo exige una decisión y adaptación separadas.
 
-El endpoint de salud no exige rol de negocio; tampoco implementa un permiso exclusivo de salud ni validación explícita de audience del JWT de aplicación. Usar un cliente técnico existente si satisface el contrato; crear uno requiere decisión del responsable. La audience del ID token Google es la URL del servicio, sin `/actuator/health`. Las probes de plataforma son distintas: una probe HTTP sin bearer válido hacia este endpoint protegido falla; consultar las probes heredadas antes de aprobar. El runner público necesita alcanzar el issuer y la URL directa del servicio: IAM correcto no elimina las restricciones de ingress. No cambiar ingress ni exposición para facilitar la prueba.
+El sujeto, client ID, audience o scope técnico firmados reconocen la identidad restringida. El contrato exige sujeto exacto, `azp` exacto, `client_id` consistente si aparece, audience exclusivamente técnica y scope `visana.health`. Claims incompletos/inconsistentes fallan cerrados. Solo GET exacto `/actuator/health` está permitido; negocio, docs, otros Actuator y métodos quedan rechazados incluso con roles administrativos. Se conserva la validación de firma/issuer/vigencia y las políticas previas de usuarios humanos; no se impone una audience global. El IdP debe reservar estos marcadores y mantener el sujeto estable. Las pruebas RSA/JWKS son locales. El probe real es TCP 8080 y no requiere JWT; una probe HTTP sin token hacia salud protegida sería incompatible.
 
 ## Diagnóstico, verificación y reversión
 
@@ -110,6 +123,6 @@ El arranque conserva Flyway y puede aplicar las migraciones existentes al ambien
 
 ## Limitaciones actuales
 
-No se dispone aquí de gcloud; Google Cloud Console pidió iniciar sesión. El usuario indicó continuar con acceso cloud pendiente. No se consultaron recursos cloud autenticados ni se recibió un 403 cloud: su existencia/configuración actual sigue **sin acceso**, no ausente. El proyecto aparece enmascarado en Actions; los logs de la revisión, usuario/BD/conectividad Cloud SQL, IAM, ingress, probes y cuenta runtime permanecen pendientes. GitHub sí fue consultado y sus faltantes son concretos. La protección de `dev` devolvió 404 y rulesets 403 con limitación de plan; no se confirmó un gate obligatorio ni se cambió. El PR permanece Draft. La alineación del puerto corrige un defecto demostrado en archivos; no confirma por sí sola la causa histórica.
+La sesión cloud permitió consultar recursos y logs. Siguen pendientes la rotación PostgreSQL y su almacenamiento seguro, base/usuario/esquema/privilegios, permisos efectivos de runtime, issuer/contrato técnico y decisión de exposición pública. No se aplicaron cargas, IAM, recursos, merge ni despliegue. La incidencia de credencial tiene registro privado sin literal/hash; su responsable sigue pendiente. Cambiar solo GitHub Secrets no rota PostgreSQL y no se debe restaurar la contraseña expuesta como rollback. Las pruebas aisladas no acreditan configuración externa aplicada ni conexión Cloud SQL real.
 
 Fuentes técnicas: [contrato del contenedor Cloud Run](https://docs.cloud.google.com/run/docs/container-contract), [inputs de deploy-cloudrun v2](https://raw.githubusercontent.com/google-github-actions/deploy-cloudrun/v2/action.yml), [workflows reutilizables](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows), [autenticación entre servicios Cloud Run](https://docs.cloud.google.com/run/docs/authenticating/service-to-service), [endpoints y client credentials de Keycloak](https://www.keycloak.org/securing-apps/oidc-layers).

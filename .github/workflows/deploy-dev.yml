@@ -7,8 +7,6 @@ on:
         required: true
       GCP_CREDENTIALS:
         required: true
-      DB_PASSWORD:
-        required: true
       DEV_HEALTHCHECK_CLIENT_SECRET:
         required: true
 
@@ -29,10 +27,13 @@ jobs:
       SERVICE_NAME: visana-api-dev
       DB_URL: ${{ vars.DB_URL }}
       DB_USER: ${{ vars.DB_USER }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_PASSWORD_SECRET_REF: ${{ vars.DEV_DB_PASSWORD_SECRET_REF }}
+      DB_CREDENTIAL_ROTATION_CONFIRMED: ${{ vars.DEV_DB_CREDENTIAL_ROTATION_CONFIRMED }}
       KEYCLOAK_ISSUER_URI: ${{ vars.KEYCLOAK_ISSUER_URI }}
       RUNTIME_SERVICE_ACCOUNT: ${{ vars.DEV_RUNTIME_SERVICE_ACCOUNT }}
       HEALTHCHECK_CLIENT_ID: ${{ vars.DEV_HEALTHCHECK_CLIENT_ID }}
+      HEALTHCHECK_SUBJECT: ${{ vars.DEV_HEALTHCHECK_SUBJECT }}
+      HEALTHCHECK_AUDIENCE: ${{ vars.DEV_HEALTHCHECK_AUDIENCE }}
       HEALTHCHECK_CLIENT_SECRET: ${{ secrets.DEV_HEALTHCHECK_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +56,7 @@ jobs:
         id: existing
         run: |
           umask 077
-          gcloud run services describe "$SERVICE_NAME" --project="$PROJECT_ID" --region="$REGION" --format=json > "$RUNNER_TEMP/service-before.json"
+          python3 -B scripts/ci/cloud_run_dev.py capture-service "$RUNNER_TEMP/service-before.json"
           python3 -B scripts/ci/cloud_run_dev.py existing "$RUNNER_TEMP/service-before.json"
           python3 -B scripts/ci/cloud_run_dev.py token
       - name: Configure Artifact Registry authentication
@@ -91,10 +92,9 @@ jobs:
         run: |
           umask 077
           revision="$SERVICE_NAME-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          gcloud run revisions describe "$revision" --project="$PROJECT_ID" --region="$REGION" --format=json > "$RUNNER_TEMP/revision.json"
-          gcloud run services describe "$SERVICE_NAME" --project="$PROJECT_ID" --region="$REGION" --format=json > "$RUNNER_TEMP/service-after.json"
+          python3 -B scripts/ci/cloud_run_dev.py capture-revision "$RUNNER_TEMP/revision.json"
+          python3 -B scripts/ci/cloud_run_dev.py capture-service "$RUNNER_TEMP/service-after.json"
           python3 -B scripts/ci/cloud_run_dev.py revision "$RUNNER_TEMP/revision.json" "$RUNNER_TEMP/service-after.json"
-          gcloud auth print-identity-token --audiences="$SERVICE_URL" > "$RUNNER_TEMP/cloud-run-token"
           python3 -B scripts/ci/cloud_run_dev.py health
       - name: Sanitized failure summary
         if: failure()

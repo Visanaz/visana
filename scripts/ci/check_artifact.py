@@ -18,6 +18,11 @@ def verify(directory, sha):
             raise ValueError("Artifact is not an executable Spring Boot JAR")
         if not any(name.startswith("BOOT-INF/lib/postgresql-") for name in jar.namelist()):
             raise ValueError("PostgreSQL driver missing from executable classpath")
+        if "BOOT-INF/lib/postgres-socket-factory-1.30.0.jar" not in jar.namelist():
+            raise ValueError("Validated Cloud SQL PostgreSQL connector missing from executable classpath")
+        for library in ("flyway-core", "flyway-database-postgresql", "flyway-mysql"):
+            if "BOOT-INF/lib/" + library + "-11.14.0.jar" not in jar.namelist():
+                raise ValueError("Coherent PostgreSQL 18 Flyway modules missing from executable classpath")
     print("Artifact SHA, checksum, executable launcher and PostgreSQL driver verified")
 
 

@@ -19,5 +19,4 @@ jobs:
     secrets:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       DEV_HEALTHCHECK_CLIENT_SECRET: ${{ secrets.DEV_HEALTHCHECK_CLIENT_SECRET }}
