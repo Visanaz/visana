@@ -29,7 +29,7 @@ python -B -m unittest discover -s scripts/ci -p 'test_*.py'
 
 En CI se usa `./mvnw --batch-mode clean verify` exclusivamente en un runner independiente. CI exige Docker y comprueba que las suites PostgreSQL ejecutaron pruebas sin saltos; la ausencia de Docker local puede producir pruebas omitidas y no equivale a validación PostgreSQL.
 
-Verificación local de esta corrección: Java 21.0.11 y salida externa, **160 pruebas, cero errores/fallos, siete omitidas por Docker ausente**; diez pruebas Python de guards pasaron. La cobertura PostgreSQL corresponde al CI del nuevo SHA. Las seis suites usan `postgres:18.3-alpine` y comprueban por JDBC su versión real. La suite de ciclo de vida verifica BD vacía, V1–V8, historial válido, segundo arranque sin reaplicar y salud UP/DOWN/UP con fallo sintético controlado. No se usa Cloud SQL ni credenciales Google.
+Verificación local inicial: Java 21.0.11 y salida externa, 160 pruebas, cero errores/fallos, siete omitidas por Docker ausente; diez pruebas Python de guards pasaron. El candidato añade una prueba de configuración técnica DEV obligatoria; su resultado definitivo corresponde al CI del nuevo SHA. Las seis suites usan `postgres:18.3-alpine` y comprueban por JDBC su versión real. La suite de ciclo de vida verifica BD vacía, V1–V8, historial válido, segundo arranque sin reaplicar y salud UP/DOWN/UP con fallo sintético controlado. No se usa Cloud SQL ni credenciales Google.
 
 El perfil `dev` usa exclusivamente el conector para Cloud SQL; requiere configuración externa aprobada. Para una BD TCP aislada utilizar la configuración local/test correspondiente, sin Google ADC. El siguiente comando DEV no debe ejecutarse contra la instancia real sin autorización de despliegue/migraciones:
 

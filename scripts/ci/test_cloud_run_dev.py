@@ -8,12 +8,12 @@ from types import SimpleNamespace
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
 import urllib.error
-from cloud_run_dev import run
+from cloud_run_dev import run, password_transition_flag
 
 
 class DeploymentGuardsTest(unittest.TestCase):
     def setUp(self):
-        self.env = {"PROJECT_ID": "test-project", "DB_URL": "jdbc:postgresql:///appdb?socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlInstance=test-project:us-central1:visana-db-dev&ipTypes=PUBLIC&cloudSqlRefreshStrategy=lazy&enableIamAuth=false",
+        self.env = {"PROJECT_ID": "visana-erp-dev", "DB_URL": "jdbc:postgresql:///appdb?socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlInstance=visana-erp-dev:us-central1:visana-db-dev&ipTypes=PUBLIC&cloudSqlRefreshStrategy=lazy&enableIamAuth=false",
                     "DB_USER": "test-user", "DB_PASSWORD_SECRET_REF": "rotated-secret:3",
                     "DB_CREDENTIAL_ROTATION_CONFIRMED": "true", "REGION": "us-central1",
                     "HEALTHCHECK_SUBJECT": "synthetic-subject", "HEALTHCHECK_AUDIENCE": "synthetic-health-api",
@@ -44,6 +44,7 @@ class DeploymentGuardsTest(unittest.TestCase):
         values, reference = prepare_existing(self.service, self.env)
         self.assertNotIn("DB_PASSWORD", values)
         self.assertEqual(reference, "DB_PASSWORD=rotated-secret:3")
+        self.assertEqual(password_transition_flag(self.service), "")
 
     def test_literal_password_is_never_carried_to_the_new_revision(self):
         self.service["spec"]["template"]["spec"]["containers"][0]["env"] = [{"name": "DB_PASSWORD", "value": "fake-leaked-password"}]
@@ -51,6 +52,7 @@ class DeploymentGuardsTest(unittest.TestCase):
         self.assertNotIn("DB_PASSWORD", values)
         self.assertEqual(reference, "DB_PASSWORD=rotated-secret:3")
         self.assertNotIn("fake-leaked-password", json.dumps(values))
+        self.assertEqual(password_transition_flag(self.service), "--remove-env-vars=DB_PASSWORD")
 
     def test_rotation_attestation_and_pinned_secret_are_required(self):
         for updates in ({"DB_CREDENTIAL_ROTATION_CONFIRMED": "false"}, {"DB_PASSWORD_SECRET_REF": "secret:latest"},
@@ -63,7 +65,7 @@ class DeploymentGuardsTest(unittest.TestCase):
         good = self.env["DB_URL"]
         invalid = ["${DB_URL}", "not-jdbc", "jdbc:postgresql://34.42.149.84/appdb", good.replace("/appdb", "/${DB_NAME}"),
                    good.replace("appdb?", "?"), good.replace("PUBLIC", "PRIVATE"), good.replace("lazy", "background"),
-                   good.replace("postgres.SocketFactory", "unverified.Factory"), good.replace("test-project:", "other-project:"),
+                   good.replace("postgres.SocketFactory", "unverified.Factory"), good.replace("visana-erp-dev:", "other-project:"),
                    good.replace("enableIamAuth=false", "enableIamAuth=true"), good + "&user=test", good + "&password=fake-secret",
                    good + "&sslmode=disable", good + "&cloudSqlInstance=other", good + "&socketFactory=evil", good + "&token=fake-token",
                    good.replace("socketFactory", "%73ocketFactory"), good.replace("socketFactory", "SocketFactory"),

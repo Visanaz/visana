@@ -28,8 +28,10 @@ public class SecurityConfig {
     public HealthClientPolicy healthClientPolicy(
             @Value("${visana.security.health-client-id:}") String client,
             @Value("${visana.security.health-subject:}") String subject,
-            @Value("${visana.security.health-audience:}") String audience) {
-        return new HealthClientPolicy(client, subject, audience);
+            @Value("${visana.security.health-audience:}") String audience,
+            org.springframework.core.env.Environment environment) {
+        return new HealthClientPolicy(client, subject, audience,
+                environment.acceptsProfiles(org.springframework.core.env.Profiles.of("dev")));
     }
 
     @Bean

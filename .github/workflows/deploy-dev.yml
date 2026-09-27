@@ -84,7 +84,7 @@ jobs:
           env_vars_update_strategy: merge
           secrets: ${{ steps.existing.outputs.db_password_secret }}
           secrets_update_strategy: merge
-          flags: '--port=8080 --service-account=${{ vars.DEV_RUNTIME_SERVICE_ACCOUNT }}'
+          flags: '--port=8080 --service-account=${{ vars.DEV_RUNTIME_SERVICE_ACCOUNT }} ${{ steps.existing.outputs.db_password_transition }}'
       - name: Verify this revision, its image digest and authenticated database health
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}

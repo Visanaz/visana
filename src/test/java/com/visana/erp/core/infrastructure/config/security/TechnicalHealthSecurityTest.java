@@ -32,6 +32,13 @@ class TechnicalHealthSecurityTest {
     @Autowired MockMvc mvc;
     @AfterAll static void close() { TOKENS.close(); }
 
+    @Test void devCannotDisableTheContractWithEmptyOrPartialConfiguration() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new HealthClientPolicy("", "", "", true));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new HealthClientPolicy("fixture", "", "", true));
+    }
+
     @Test void onlyExactGetHealthIsAllowedEvenWithAdministrativeRoles() throws Exception {
         Map<String, Object> claims = new HashMap<>(TOKENS.technicalClaims());
         claims.put("realm_access", Map.of("roles", List.of("admin", "distributor")));

@@ -59,7 +59,7 @@ def validate_config(env):
         required(env, name)
     for name in ("REGION", "HEALTHCHECK_SUBJECT", "HEALTHCHECK_AUDIENCE"):
         required(env, name)
-    if not re.fullmatch(r"[a-z][a-z0-9-]{4,62}", env["PROJECT_ID"]) or env["REGION"] != "us-central1":
+    if env["PROJECT_ID"] != "visana-erp-dev" or env["REGION"] != "us-central1":
         raise GuardError("Invalid DEV destination")
     validate_jdbc(env["DB_URL"], env["PROJECT_ID"] + ":" + env["REGION"] + ":visana-db-dev")
     secret_reference(env)
@@ -107,6 +107,15 @@ def prepare_existing(service, env):
                    "DEV_HEALTHCHECK_AUDIENCE": env["HEALTHCHECK_AUDIENCE"]})
     reference = secret_reference(env)
     return values, reference
+
+
+def password_transition_flag(service):
+    """A future approved deploy must remove the literal before changing its Cloud Run type."""
+    variables = service["spec"]["template"]["spec"]["containers"][0].get("env", [])
+    password = next((item for item in variables if item.get("name") == "DB_PASSWORD"), None)
+    if password and "valueFrom" not in password:
+        return "--remove-env-vars=DB_PASSWORD"
+    return ""
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -235,12 +244,14 @@ def main():
         path.write_text(json.dumps(data))
         path.chmod(0o600)
     elif action == "existing":
-        values, reference = prepare_existing(json.loads(Path(sys.argv[2]).read_text()), env)
+        service = json.loads(Path(sys.argv[2]).read_text())
+        values, reference = prepare_existing(service, env)
         path = Path(env["RUNNER_TEMP"]) / "dev-env.json"
         path.write_text(json.dumps(values))
         path.chmod(0o600)
         with open(env["GITHUB_OUTPUT"], "a") as output:
             output.write("db_password_secret=" + reference + "\n")
+            output.write("db_password_transition=" + password_transition_flag(service) + "\n")
     elif action == "token":
         application_token(env)  # Confirm authentication before publishing/deploying; never persist the token.
     elif action == "revision":

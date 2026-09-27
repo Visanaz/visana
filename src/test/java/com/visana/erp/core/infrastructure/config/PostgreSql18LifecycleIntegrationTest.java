@@ -71,6 +71,7 @@ class PostgreSql18LifecycleIntegrationTest {
     private ServletWebServerApplicationContext start() {
         return (ServletWebServerApplicationContext) new SpringApplicationBuilder(TestApplication.class).run(
                 "--server.port=0", "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
+                "--spring.sql.init.mode=never",
                 "--spring.datasource.username=" + POSTGRES.getUsername(), "--spring.datasource.password=" + POSTGRES.getPassword(),
                 "--visana.security.health-client-id=" + SignedJwtFixture.CLIENT,
                 "--visana.security.health-subject=" + SignedJwtFixture.SUBJECT,

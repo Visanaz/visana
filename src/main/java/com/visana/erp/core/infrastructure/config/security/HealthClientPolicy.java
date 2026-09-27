@@ -16,10 +16,17 @@ public final class HealthClientPolicy implements OAuth2TokenValidator<Jwt> {
     private final String audience;
 
     public HealthClientPolicy(String clientId, String subject, String audience) {
+        this(clientId, subject, audience, false);
+    }
+
+    public HealthClientPolicy(String clientId, String subject, String audience, boolean required) {
         this.clientId = clientId;
         this.subject = subject;
         this.audience = audience;
         long configured = List.of(clientId, subject, audience).stream().filter(v -> !v.isBlank()).count();
+        if (required && configured == 0) {
+            throw new IllegalArgumentException("DEV requires the technical health identity contract");
+        }
         if (configured != 0 && (configured != 3 || List.of(clientId, subject, audience).stream()
                 .anyMatch(v -> v.contains("${") || v.chars().anyMatch(Character::isWhitespace)))) {
             throw new IllegalArgumentException("Incomplete technical health identity contract");
