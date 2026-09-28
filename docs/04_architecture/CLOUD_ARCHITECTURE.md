@@ -2,7 +2,7 @@
 
 Corrección del mismo [PR #20](https://github.com/Visanaz/visana/pull/20), Draft. Código y pruebas aisladas autorizados; configuración externa, IAM, recursos, merge y despliegue no aplicados. Guía de uso: [README](../../README.md).
 
-## Evidencia histórica y captura autenticada
+## Evidencia histórica y captura autenticada del 2026-09-26
 
 El [run 36188945156](https://github.com/Visanaz/visana/actions/runs/36188945156), SHA 040ec3f929c15e546571f48fa425736dd83c3b36, publicó el digest sha256:b242ce81b91692d20e5cc5e80de44482e90b174689c444cf08b1671ba4eaa4a4. Artifact Registry confirmó etiqueta y digest. La revisión visana-api-dev-00001-dwp falló:
 
@@ -88,7 +88,7 @@ Propuesta externa: almacenar **credencial ya rotada** en secreto/versión numér
 
 Diagnósticos proyectan campos permitidos antes de escribir; excluyen env sensibles, argumentos, cuerpos HTTP y excepciones con URL/valores. Pruebas con secretos ficticios cubren discrepancias y errores HTTP/JSON/red. Artefactos publicados: JAR/procedencia y evidencia sanitizada de versiones, sin volcados cloud ni credenciales.
 
-## Pendientes externos concretos
+## Pendientes externos de la captura del 2026-09-26
 
 | Principal/responsable | Recurso/acción | Evidencia y pendiente |
 |---|---|---|
@@ -109,3 +109,167 @@ CI precede CD; PR omite CD; JAR/digest son del mismo SHA validado. El nuevo CI d
 Futura integración/despliegue requiere autorización separada. El arranque puede ejecutar Flyway. No hay revisión previa sana acreditada ni rollback funcional probado. Revertir imagen no revierte migraciones; no repair/baseline/down migrations ni credencial expuesta.
 
 **Estados separados:** código validado en entorno aislado; configuración externa pendiente de aprobación/aplicación; despliegue no realizado; conexión Cloud SQL real no verificada.
+
+## Reconciliación manual 2026-09-28
+
+Solicitud de Cristian, responsable de la configuración manual. Punto de partida verificado: rama `fix/cloud-run-dev-ci-cd`, HEAD local/remoto `fbc570d4a7b91f519326bb44dae363efe640f5fe`, base remota `dev` en `040ec3f929c15e546571f48fa425736dd83c3b36`, PR #20 OPEN/Draft. [CI 36291639215](https://github.com/Visanaz/visana/actions/runs/36291639215) SUCCESS, CD SKIPPED. Esta actualización documental no cambia código, workflows, migraciones ni configuración externa. Las 105 rutas originales pasan la comprobación de contenido/ausencia, estado Git e índice.
+
+El PDF «infra visana gemini.pdf» no se encontró en workspace, adjuntos ni Downloads; no fue leído. Las capturas mencionadas no llegaron como archivos independientes en esta solicitud. Se contrastaron los datos transcritos con la consola autenticada y el contrato del HEAD.
+
+### Estado real comprobado
+
+| Elemento | Resultado / límite de evidencia |
+|---|---|
+| Runtime del servicio | `984938781030-compute@developer.gserviceaccount.com`, opción actual seleccionada en Seguridad de `visana-api-dev`; no se cambió ni guardó una revisión |
+| Desplegador | Principal histórico `github-actions-dev@visana-erp-dev.iam.gserviceaccount.com`; IAM conserva Run Admin, AR Writer, SA User y SQL Client. La existencia del secreto GitHub `GCP_CREDENTIALS` no permite demostrar su identidad interna sin leerlo; correspondencia pendiente del responsable |
+| Agente de plataforma | `service-984938781030@serverless-robot-prod.iam.gserviceaccount.com`: `roles/run.serviceAgent` y bindings adicionales `roles/cloudsql.client` y `roles/secretmanager.secretAccessor`, ambos sobre el proyecto |
+| Runtime / SQL | Policy Troubleshooter: `cloudsql.instances.get` y `cloudsql.instances.connect` en `visana-db-dev`: «No puede acceder»; ninguna política de permiso otorga acceso |
+| Runtime / secreto | `secretmanager.versions.access` sobre `visana-dev-db-password`: mismo resultado. No se leyó el valor del secreto |
+| Alcance del diagnóstico | No existen políticas de límite de acceso en la evaluación. El operador no puede consultar las políticas de denegación: estado desconocido; no afirmar ausencia de deny ni éxito futuro tras conceder un rol |
+| Cloud SQL | Instancia `visana-db-dev`, PostgreSQL 18; base `visana_dev` comprobada, UTF8 / en_US.UTF8; usuario `visana_app_dev` comprobado, autenticación integrada |
+| Atributos y privilegios SQL | `[NO EVIDENCIADO]`: la tabla Usuarios no acredita membresías/CREATEDB/CREATEROLE ni privilegios de esquema/objetos. SQL Studio presenta autenticación, sin sesión SQL autorizada disponible |
+| Secret Manager | `projects/984938781030/secrets/visana-dev-db-password`; versión numérica `1`, habilitada, creada 2026-09-28. Sin binding de acceso para runtime; acceso del agente de plataforma heredado del proyecto. El contenido y su correspondencia con la credencial nueva no fueron consultados |
+| GitHub | Cero variables y cero Environments. Secretos existentes: `GCP_PROJECT_ID`, `GCP_CREDENTIALS`, `DB_PASSWORD`; falta `DEV_HEALTHCHECK_CLIENT_SECRET` |
+
+Fuentes actuales: [runtime](https://console.cloud.google.com/run/detail/us-central1/visana-api-dev/security?project=visana-erp-dev), [IAM](https://console.cloud.google.com/iam-admin/iam?project=visana-erp-dev), [bases](https://console.cloud.google.com/sql/instances/visana-db-dev/databases?project=visana-erp-dev), [usuarios](https://console.cloud.google.com/sql/instances/visana-db-dev/users?project=visana-erp-dev), [versiones](https://console.cloud.google.com/security/secret-manager/secret/visana-dev-db-password/versions?project=visana-erp-dev), [permisos del secreto](https://console.cloud.google.com/security/secret-manager/secret/visana-dev-db-password/permissions?project=visana-erp-dev), [diagnóstico IAM](https://console.cloud.google.com/iam-admin/troubleshooter?project=visana-erp-dev). No se ejecutó lectura de payload ni prueba de contraseñas.
+
+Los dos bindings adicionales del agente de plataforma están identificados; no se incluye su retirada en el lote. Falta acreditar que se concedieron por error y revisar impacto sobre otros consumidores. El listado global de servicios Cloud Run devolvió «El servidor no pudo completar tu solicitud»; no equivale a ausencia de otros servicios. Conservar el principal y `roles/run.serviceAgent`; cualquier retirada posterior será de bindings concretos, sin reemplazar políticas completas.
+
+### Lote único listo para autorizar, todavía no aplicado
+
+Principal **R** = `serviceAccount:984938781030-compute@developer.gserviceaccount.com`. Las cuatro variables GitHub pertenecen a `Visanaz/visana`, nivel repositorio; actualmente ausentes. No se carga una contraseña en GitHub.
+
+| ID / destino | Estado actual | Cambio exacto propuesto | Fuente y comprobación | Impacto / reversión |
+|---|---|---|---|---|
+| L-01 / proyecto `visana-erp-dev`, principal R | Sin permiso SQL get/connect en diagnóstico | Agregar solo binding `roles/cloudsql.client`, sin condición nueva | Runtime real + diagnóstico; tras aprobación comprobar ambas capacidades, con límite de visibilidad deny | Permite transporte Connector a instancias del proyecto; no concede privilegios PostgreSQL. Revertir solo este binding añadido |
+| L-02 / `projects/visana-erp-dev/secrets/visana-dev-db-password`, principal R | Sin permiso de acceso al secreto | Agregar solo binding `roles/secretmanager.secretAccessor` en este secreto, sin condición nueva | Secreto real + diagnóstico; verificar política del recurso y permiso sin leer payload | Permite acceder a versiones de este secreto, no a todos los secretos del proyecto. Revertir solo este binding añadido |
+| L-03 / variable `DB_URL` | Ausente | URL literal del bloque siguiente | Base y connection name confirmados; guard Python/Java exige los cinco parámetros exactos | Selecciona `visana_dev` en futuro CD; no conecta ni migra al cargarla. Reversión: eliminar únicamente esta variable nueva |
+| L-04 / variable `DB_USER` | Ausente | `visana_app_dev` | Usuario integrado comprobado; consumidor `application-dev.properties` | Selecciona usuario para futuro arranque; no cambia su contraseña/roles. Reversión: eliminar esta variable nueva |
+| L-05 / variable `DEV_RUNTIME_SERVICE_ACCOUNT` | Ausente | `984938781030-compute@developer.gserviceaccount.com` | Identidad actual seleccionada; guard rechaza diferencias | Declara la identidad existente para futuro CD. Reversión: eliminar esta variable nueva |
+| L-06 / variable `DEV_DB_PASSWORD_SECRET_REF` | Ausente | `visana-dev-db-password:1` | Versión numérica 1 habilitada comprobada; guard rechaza `latest` | Fija referencia para futuro CD; no lee/copiará payload al configurarla. Reversión: eliminar esta variable nueva |
+
+Valor exacto de L-03:
+
+```text
+jdbc:postgresql:///visana_dev?socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlInstance=visana-erp-dev:us-central1:visana-db-dev&ipTypes=PUBLIC&cloudSqlRefreshStrategy=lazy&enableIamAuth=false
+```
+
+La aprobación L-01–L-06 no autoriza merge, Ready, despliegue, revisión manual, rotación, escrituras SQL ni nuevas versiones del secreto. Antes de aplicar, releer el estado y omitir concesiones ya efectivas; un cambio de identidad/recurso/valor requiere revisar el lote. Después, comprobar metadatos y diagnosticar acceso, conservando cualquier incertidumbre de deny.
+
+### Entradas bloqueadas o ya existentes
+
+| Entrada / decisión | Estado | Dato o acción concreta pendiente |
+|---|---|---|
+| `DEV_DB_CREDENTIAL_ROTATION_CONFIRMED` | Falta evidencia administrativa | No cargar `true`: identificar responsable y usuario de la credencial expuesta, acreditar revocación/contención y consumidores actualizados. Crear `visana_app_dev` no cierra el incidente. No recuperar ni probar la contraseña anterior |
+| Credencial nueva en secreto | Falta dato concreto del responsable | Acreditar que versión 1 contiene la credencial nueva de `visana_app_dev`, sin entregar su valor. Existencia/habilitación no prueban esa correspondencia ni validez |
+| `KEYCLOAK_ISSUER_URI` | Falta issuer cloud verificable | HTTPS, discovery y JWKS accesibles desde cloud; no usar localhost ni inventar URL |
+| `DEV_HEALTHCHECK_CLIENT_ID`, `DEV_HEALTHCHECK_SUBJECT`, `DEV_HEALTHCHECK_AUDIENCE` | Falta contrato IdP real | Cliente confidencial con service account, sujeto estable, `azp` exacto, audience exclusivamente dedicada y scope `visana.health`; las identidades locales encontradas no satisfacen este contrato |
+| `DEV_HEALTHCHECK_CLIENT_SECRET` | Secreto GitHub ausente | Provisión segura por responsable del cliente real; no enviar por conversación ni reutilizar secretos de ejemplos |
+| `GCP_PROJECT_ID`, `GCP_CREDENTIALS` | Secretos GitHub ya existentes | Conservar. Responsable debe acreditar proyecto e identidad del desplegador sin revelar clave; nombres no prueban valores |
+| GitHub `DB_PASSWORD` | Consumidor histórico demostrado | Conservar: `dev` aún referencia `secrets.DB_PASSWORD` en `.github/workflows/deploy-dev.yml`, blob `acd7ed6099c7264ec3ed03034ab153cb8d0ddc9e`. Ninguno en candidato; `qa`/`main` no ofrecen workflows consultables. No retirar sin inventario completo y aprobación |
+| SQL / privilegios y propiedad | Falta sesión autorizada | Ejecutar consultas de lectura inferiores en `visana_dev`; no abrir redes autorizadas. No conceder/revocar sobre supuestos |
+| Retirada de roles al agente | Falta atribución de error e impacto | No incluida en lote; no tocar `roles/run.serviceAgent` |
+
+### Keycloak local recuperado
+
+En el backend, `visana-realm-export.json` define realm `visana-erp` y cliente público OIDC `visana-backend`; la configuración general usa como fallback `http://localhost:8080/realms/visana-erp`. El SDK Admin 26.0.0 no demuestra la versión del servidor local.
+
+El worktree autorizado frontend contiene `dev/local-demo/docker-compose.yml` y `e2e/auth/docker-compose.auth-e2e.yml`: imagen `quay.io/keycloak/keycloak:26.7.3`, `start-dev`, binding loopback. Sus exports definen `visana-local` / `visana-local-spa` y `visana-e2e` / `visana-e2e-spa`, clientes públicos con service accounts desactivadas. Son configuraciones de demostración/pruebas; no evidencia de proceso ejecutándose ni de publicación cloud. No se mostraron secretos de exports/compose. El compose de Downloads usa realm `sitfai-erp`; no pertenece al issuer VISANA.
+
+Bloqueo mínimo: el responsable debe proporcionar un Keycloak VISANA publicado y verificable por HTTPS, o autorizar en una tarea separada su publicación con persistencia/configuración apropiadas y provisión del cliente técnico exacto. Verificar discovery/JWKS y claims firmados antes de cargar las cinco entradas OIDC. No desplegarlo desde esta tarea ni reutilizar el cliente público local para `client_credentials`.
+
+### Consultas de lectura para Cristian en Cloud SQL Studio
+
+Seleccionar **visana_dev** y una sesión autorizada. Preferir sesión de `visana_app_dev` para observar su esquema efectivo; si se ejecuta como administrador, `current_schema` y `search_path` describen esa sesión, no el usuario aplicación. Compartir solo resultados de metadata, sin contraseñas ni hashes. No ejecutar migraciones.
+
+```sql
+BEGIN READ ONLY;
+SELECT current_database(), current_user, session_user,
+       current_schema(), current_schemas(false);
+SHOW search_path;
+
+SELECT rolname, rolcanlogin, rolsuper, rolinherit, rolcreatedb,
+       rolcreaterole, rolreplication, rolbypassrls
+FROM pg_roles WHERE rolname = 'visana_app_dev';
+
+SELECT parent.rolname AS granted_role, member.rolname AS member,
+       grantor.rolname AS grantor, m.admin_option, m.inherit_option,
+       m.set_option
+FROM pg_auth_members m
+JOIN pg_roles parent ON parent.oid = m.roleid
+JOIN pg_roles member ON member.oid = m.member
+JOIN pg_roles grantor ON grantor.oid = m.grantor
+WHERE member.rolname = 'visana_app_dev';
+
+SELECT rolname,
+       pg_has_role('visana_app_dev', oid, 'MEMBER') AS member_direct_or_indirect,
+       pg_has_role('visana_app_dev', oid, 'USAGE') AS privileges_available
+FROM pg_roles
+WHERE rolname <> 'visana_app_dev'
+  AND pg_has_role('visana_app_dev', oid, 'MEMBER');
+
+SELECT d.datname, pg_get_userbyid(d.datdba) AS owner,
+       has_database_privilege('visana_app_dev', d.oid, 'CONNECT') AS can_connect
+FROM pg_database d WHERE d.datname = 'visana_dev';
+
+SELECT COALESCE(d.datname, '*') AS database_name,
+       COALESCE(r.rolname, '*') AS role_name, cfg AS search_path_setting
+FROM pg_db_role_setting s
+LEFT JOIN pg_database d ON d.oid = s.setdatabase
+LEFT JOIN pg_roles r ON r.oid = s.setrole
+CROSS JOIN LATERAL unnest(s.setconfig) cfg
+WHERE (s.setdatabase = 0 OR d.datname = 'visana_dev')
+  AND (s.setrole = 0 OR r.rolname = 'visana_app_dev')
+  AND cfg LIKE 'search_path=%';
+
+SELECT n.nspname, pg_get_userbyid(n.nspowner) AS owner,
+       has_schema_privilege('visana_app_dev', n.oid, 'USAGE') AS can_use,
+       has_schema_privilege('visana_app_dev', n.oid, 'CREATE') AS can_create
+FROM pg_namespace n
+WHERE n.nspname NOT LIKE 'pg_%' AND n.nspname <> 'information_schema';
+
+SELECT n.nspname, c.relname, c.relkind, pg_get_userbyid(c.relowner) AS owner,
+       pg_has_role('visana_app_dev', c.relowner, 'USAGE') AS owner_role_available,
+       has_table_privilege('visana_app_dev', c.oid, 'SELECT') AS can_select,
+       has_table_privilege('visana_app_dev', c.oid, 'INSERT') AS can_insert,
+       has_table_privilege('visana_app_dev', c.oid, 'UPDATE') AS can_update,
+       has_table_privilege('visana_app_dev', c.oid, 'DELETE') AS can_delete,
+       has_table_privilege('visana_app_dev', c.oid, 'REFERENCES') AS can_reference
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind IN ('r', 'p', 'v', 'm')
+  AND n.nspname NOT LIKE 'pg_%' AND n.nspname <> 'information_schema'
+ORDER BY n.nspname, c.relname;
+
+SELECT n.nspname, c.relname, pg_get_userbyid(c.relowner) AS owner,
+       has_sequence_privilege('visana_app_dev', c.oid, 'USAGE') AS can_use,
+       has_sequence_privilege('visana_app_dev', c.oid, 'SELECT') AS can_select,
+       has_sequence_privilege('visana_app_dev', c.oid, 'UPDATE') AS can_update
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind = 'S'
+  AND n.nspname NOT LIKE 'pg_%' AND n.nspname <> 'information_schema';
+
+SELECT n.nspname, c.relname
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relname = 'flyway_schema_history';
+ROLLBACK;
+```
+
+Solo si el último SELECT confirma `public.flyway_schema_history`, ejecutar aparte:
+
+```sql
+BEGIN READ ONLY;
+SELECT installed_rank, version, description, type, installed_by,
+       installed_on, success
+FROM public.flyway_schema_history ORDER BY installed_rank;
+ROLLBACK;
+```
+
+Si se encuentra en otro esquema, sustituir `public` únicamente por el esquema comprobado; si no existe, registrar ausencia y no crear/baseline/repair. Las migraciones V1–V8 actuales crean tablas/índices/constraints en esquema no cualificado e insertan datos en V8; no crean roles, bases ni extensiones. Flyway y aplicación comparten DataSource: requieren CONNECT, USAGE/CREATE del esquema efectivo y propiedad compatible para DDL, además de DML sobre objetos. Solo conceder DML a un esquema vacío no permite este arranque.
+
+La [documentación Cloud SQL](https://docs.cloud.google.com/sql/docs/postgres/users) explica la concesión predeterminada `cloudsqlsuperuser`/CREATEDB/CREATEROLE a usuarios integrados sin roles asignados; esto exige verificar el usuario real, no afirmar que los tiene. Si los resultados demuestran esos privilegios innecesarios, preparar `REVOKE cloudsqlsuperuser FROM visana_app_dev` y `ALTER ROLE visana_app_dev NOCREATEDB NOCREATEROLE`, junto con los grants mínimos y propiedad que los resultados indiquen; comprobar membresías indirectas antes. No ejecutar ni autorizar esos ajustes dentro de L-01–L-06.
+
+### Preservación del pipeline y decisión
+
+`build.yml` exige CI antes de CD y omite CD para PR; los guards reales aceptan la URL propuesta y mantienen DB_URL/DB_USER, ADC runtime, puerto, referencia fija y cliente técnico. No hace falta sustituir YAML. Se revisó `deploy-cloudrun@v2`, resuelto a `251330ba9a8a34bfbc1622895f42e1d53fd14522`: merge produce `--update-env-vars` y `--update-secrets`; overwrite produciría `--set-*`. La acción añade los flags extra, incluido `--remove-env-vars=DB_PASSWORD` cuando el guard detecta literal. No se incorpora DB_PASSWORD al archivo de variables. [Código oficial de esa revisión](https://github.com/google-github-actions/deploy-cloudrun/blob/251330ba9a8a34bfbc1622895f42e1d53fd14522/src/main.ts), [semántica gcloud](https://docs.cloud.google.com/sdk/gcloud/reference/run/deploy). La transición está preparada para el futuro despliegue aprobado; no se hizo una revisión manual ni se borraron variables ajenas.
+
+**Bloqueado para solicitar integración:** lote IAM/GitHub sin aprobar/aplicar; atributos/esquema/privilegios SQL sin verificar; cierre administrativo de credencial antigua y correspondencia de nueva credencial pendientes; issuer/cliente/claims/secreto OIDC cloud ausentes; correspondencia del desplegador pendiente y decisión de soporte Spring ya documentada. No solicitar merge mientras esos requisitos sigan abiertos. Después, identificar el SHA vigente y explicar que integrarlo en `dev` ejecutará un nuevo CI/CD y puede aplicar Flyway al arrancar. Configurar variables/permisos no demuestra arranque exitoso.

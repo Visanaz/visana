@@ -8,7 +8,8 @@ Backend existente de VISANA: Java/Spring Boot, persistencia y migraciones, módu
 - **VERIFICADO HISTÓRICAMENTE:** el CI del SHA `040ec3f929c15e546571f48fa425736dd83c3b36` pasó el 25 de septiembre de 2026. La imagen fue publicada; el despliegue falló al crear la revisión `visana-api-dev-00001-dwp`.
 - **VERIFICADO EN PR:** [CI 36277138752](https://github.com/Visanaz/visana/actions/runs/36277138752) asociado al head `72bebe3f4b3110a3895b3bf37b89a327d56683d7`, ejecutado sobre su merge temporal: 153 pruebas sin fallos, errores ni omisiones, PostgreSQL aislado, contrato y Docker Linux amd64. CD omitido por tratarse de PR.
 - **CAPTURA CLOUD:** proyecto `visana-erp-dev`, Cloud Run/Artifact Registry/Cloud SQL consultados. Los logs históricos confirmaron URL DataSource inválida y el desajuste adicional 8084/8080. El servicio tiene ingress All y binding allUsers; no exige actualmente token Google.
-- **CORRECCIÓN ACTUAL:** [CI 36290113720](https://github.com/Visanaz/visana/actions/runs/36290113720), head `c8309ed1c08b8157953e0ea4cb6d69f9b3f90714`: 161 pruebas Java sin fallos/errores/omisiones, diez Python, seis suites PostgreSQL 18.3, migraciones, salud y JWT/JWKS aislados. El mantenimiento JDBC posterior requiere su propio CI. [PR #20](https://github.com/Visanaz/visana/pull/20) sigue Draft; no se desplegó ni verificó conexión Cloud SQL real.
+- **CORRECCIÓN VALIDADA:** [CI 36291639215](https://github.com/Visanaz/visana/actions/runs/36291639215), head `fbc570d4a7b91f519326bb44dae363efe640f5fe`: 161 pruebas Java sin fallos/errores/omisiones, diez Python, seis suites PostgreSQL 18.3, mantenimiento JDBC 42.7.13, migraciones, salud y JWT/JWKS aislados. CD omitido. [PR #20](https://github.com/Visanaz/visana/pull/20) sigue Draft; no se desplegó ni verificó conexión Cloud SQL real.
+- **RECONCILIACIÓN 2026-09-28:** confirmados `visana_dev`, usuario integrado `visana_app_dev` y secreto `visana-dev-db-password`, versión `1` habilitada, sin leer su valor. Runtime permanece en la cuenta compute; los roles SQL Client y Secret Accessor fueron observados en el agente de plataforma, no en runtime. [Lote pendiente de aprobación y consultas SQL](docs/04_architecture/CLOUD_ARCHITECTURE.md#reconciliación-manual-2026-09-28).
 
 ## Stack y requisitos
 
@@ -16,7 +17,7 @@ Versiones efectivas: Java 21, Spring Boot 3.4.0, Maven 3.9.9, Cloud SQL PostgreS
 
 Revisión acotada: 42.7.13 incluye correcciones posteriores a CVE-2025-49146 (SCRAM/CPU y channel binding). Su compatibilidad se verifica en CI con PostgreSQL 18.3, Connector empaquetado y Flyway; no demuestra conexión cloud ni ausencia de vulnerabilidades. Boot 3.4.x terminó soporte abierto y Security 6.4.1 conserva un aviso pertinente sobre cabeceras HTTP. La [guía cloud](docs/04_architecture/CLOUD_ARCHITECTURE.md#revisión-acotada-de-dependencias) documenta condiciones y la decisión de soporte/migración pendiente, sin actualizar Spring de forma independiente.
 
-Desarrollo: JDK 21, Maven Wrapper y configuración externa del entorno. Docker con motor Linux es necesario para las cinco suites PostgreSQL con Testcontainers y para construir la imagen. Los archivos `.env` no son cargados automáticamente por Maven/Spring: exportar las variables al proceso sin publicarlas.
+Desarrollo: JDK 21, Maven Wrapper y configuración externa del entorno. Docker con motor Linux es necesario para las seis suites PostgreSQL con Testcontainers y para construir la imagen. Los archivos `.env` no son cargados automáticamente por Maven/Spring: exportar las variables al proceso sin publicarlas.
 
 ## Desarrollo y pruebas
 
@@ -49,8 +50,8 @@ El perfil `dev` usa exclusivamente el conector para Cloud SQL; requiere configur
 |---|---|---|
 | `SPRING_PROFILES_ACTIVE` | Workflow fija `dev` | Obligatorio |
 | `PORT` | Cloud Run lo proporciona; fallback local 8084 | No definir en GitHub |
-| `DB_URL` | URL JDBC del conector oficial, sin host ni credenciales; contrato debajo | Base aprobada pendiente |
-| `DB_USER` | Variable GitHub del mismo nombre; usuario PostgreSQL real | Obligatorio, actualmente pendiente |
+| `DB_URL` | URL JDBC del conector oficial, sin host ni credenciales; contrato debajo | `visana_dev` comprobada; carga GitHub y privilegios pendientes |
+| `DB_USER` | Variable GitHub del mismo nombre; usuario PostgreSQL real | `visana_app_dev` comprobado; carga GitHub y privilegios pendientes |
 | `DB_PASSWORD` | Credencial PostgreSQL rotada, consumida por Secret Manager en la revisión futura | No usar el literal expuesto ni copiarlo desde GitHub |
 | `KEYCLOAK_ISSUER_URI` | Variable GitHub del mismo nombre; issuer HTTPS externo verificado | Obligatorio, actualmente pendiente |
 | `GCP_PROJECT_ID` | Secret GitHub existente, usado como proyecto explícito | Existente; valor no reproducido |
@@ -60,7 +61,7 @@ El perfil `dev` usa exclusivamente el conector para Cloud SQL; requiere configur
 | `DEV_HEALTHCHECK_CLIENT_SECRET` | Secret GitHub de ese cliente; se usa solo para obtener un bearer efímero | Pendiente; no enviar por chat |
 | `DEV_HEALTHCHECK_SUBJECT` | Sujeto firmado e inmutable del cliente técnico; permite reconocerlo aun sin scope/azp | Nuevo campo mínimo, pendiente del IdP |
 | `DEV_HEALTHCHECK_AUDIENCE` | Audience dedicada para salud, sin imponerla globalmente a usuarios humanos | Nuevo campo mínimo, pendiente del IdP |
-| `DEV_DB_PASSWORD_SECRET_REF` | Referencia aprobada `nombre-secreto:VERSION_NUMERICA` | Nueva fuente; no se inventa recurso ni versión |
+| `DEV_DB_PASSWORD_SECRET_REF` | Referencia fija `visana-dev-db-password:1`, versión habilitada comprobada | Carga pendiente de aprobación; el valor no fue leído ni validado |
 | `DEV_DB_CREDENTIAL_ROTATION_CONFIRMED` | `true` tras cierre documentado por el responsable de rotación/revocación PostgreSQL | Gate administrativo; no prueba revocación ni conexión; no probar la contraseña antigua |
 
 Contrato único de `DB_URL` (plantilla; **no cargar el placeholder**):
@@ -73,7 +74,7 @@ La base debe ser un identificador ASCII simple aprobado por el DBA; no elegir `p
 
 El CD no consume ya el secreto GitHub `DB_PASSWORD`: exige referencia Secret Manager fija y atestación de rotación, sin trasladar literales a archivos temporales. Conserva configuración ajena mediante merge y rechaza overrides de identidad/DataSource/Flyway/seguridad/JVM. Los diagnósticos capturan JSON en memoria y escriben solo campos permitidos; excluyen contraseñas, valores desconocidos, cuerpos HTTP y argumentos. Las excepciones no imprimen valores ni URLs.
 
-Consulta previa a esta corrección: cero variables de repositorio y secretos `GCP_PROJECT_ID`, `GCP_CREDENTIALS`, `DB_PASSWORD`; ninguna carga externa se realizó. Todas las variables de la tabla y el secreto del cliente siguen pendientes. `build.yml` pasa ahora tres secretos: proyecto, desplegador y cliente OIDC. No se selecciona ni crea un Environment.
+Consulta del 2026-09-28: cero variables de repositorio y secretos `GCP_PROJECT_ID`, `GCP_CREDENTIALS`, `DB_PASSWORD`; ninguna carga externa se realizó desde esta tarea. Las nueve variables del contrato y `DEV_HEALTHCHECK_CLIENT_SECRET` siguen pendientes. `build.yml` pasa tres secretos: proyecto, desplegador y cliente OIDC. No se selecciona ni crea un Environment. El workflow remoto de `dev` aún consume `secrets.DB_PASSWORD`: conservarlo; `qa` y `main` no ofrecieron un directorio de workflows consultable.
 
 La [guía cloud](docs/04_architecture/CLOUD_ARCHITECTURE.md) identifica fuentes consultadas, permisos por recurso y decisiones externas. Digest, URL y bearer efímero se producen durante el run; no son secretos permanentes que deba cargar el operador.
 
@@ -125,6 +126,6 @@ El arranque conserva Flyway y puede aplicar las migraciones existentes al ambien
 
 ## Limitaciones actuales
 
-La sesión cloud permitió consultar recursos y logs. Siguen pendientes la rotación PostgreSQL y su almacenamiento seguro, base/usuario/esquema/privilegios, permisos efectivos de runtime, issuer/contrato técnico y decisión de exposición pública. No se aplicaron cargas, IAM, recursos, merge ni despliegue. La incidencia de credencial tiene registro privado sin literal/hash; su responsable sigue pendiente. Cambiar solo GitHub Secrets no rota PostgreSQL y no se debe restaurar la contraseña expuesta como rollback. Las pruebas aisladas no acreditan configuración externa aplicada ni conexión Cloud SQL real.
+La base, el usuario y la versión del secreto están comprobados; faltan atributos SQL, esquema/privilegios, concesiones a runtime, issuer/contrato técnico cloud y cierre administrativo de la credencial anteriormente expuesta. SQL Studio exige autenticación y no hay sesión SQL autorizada disponible. El diagnóstico IAM no encuentra políticas de permiso para runtime en SQL/secretos; las políticas de denegación no son visibles al operador. No se aplicaron cargas, IAM, recursos, merge ni despliegue desde esta tarea. Crear otro usuario no acredita revocación de la credencial anterior. Las pruebas aisladas no acreditan conexión Cloud SQL real. Véase el lote concreto en la guía cloud.
 
 Fuentes técnicas: [contrato del contenedor Cloud Run](https://docs.cloud.google.com/run/docs/container-contract), [inputs de deploy-cloudrun v2](https://raw.githubusercontent.com/google-github-actions/deploy-cloudrun/v2/action.yml), [workflows reutilizables](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows), [autenticación entre servicios Cloud Run](https://docs.cloud.google.com/run/docs/authenticating/service-to-service), [endpoints y client credentials de Keycloak](https://www.keycloak.org/securing-apps/oidc-layers).
