@@ -1,0 +1,45 @@
+# Only the test runner supplies synthetic credentials. No cloud resources/ADC.
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: proof_admin
+      POSTGRES_PASSWORD: ${VISANA_KC_PROOF_ADMIN_PASSWORD:?synthetic test value required}
+      VISANA_KC_PROOF_DB_PASSWORD: ${VISANA_KC_PROOF_DB_PASSWORD:?synthetic test value required}
+    volumes:
+      - keycloak-proof-db:/var/lib/postgresql
+      - ./infra/keycloak/test-postgres-init.sql:/docker-entrypoint-initdb.d/keycloak.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proof_admin -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  keycloak:
+    build: ./infra/keycloak
+    image: ${VISANA_KC_PROOF_IMAGE:?isolated test image required}
+    environment:
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_test
+      KC_DB_USERNAME: keycloak_test
+      KC_DB_PASSWORD: ${VISANA_KC_PROOF_DB_PASSWORD:?synthetic test value required}
+      KC_HOSTNAME: http://127.0.0.1:${VISANA_KC_PROOF_PORT:?isolated loopback port required}
+      KC_BOOTSTRAP_ADMIN_USERNAME: proof-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${VISANA_KC_PROOF_BOOTSTRAP_PASSWORD:?synthetic test value required}
+      VISANA_KEYCLOAK_HEALTH_CLIENT_SECRET: ${VISANA_KC_PROOF_CLIENT_SECRET:?synthetic test value required}
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=65
+    ports:
+      - "127.0.0.1:${VISANA_KC_PROOF_PORT}:8080"
+      - "127.0.0.1:${VISANA_KC_PROOF_MANAGEMENT_PORT:?isolated loopback port required}:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "{ printf 'GET /health/ready HTTP/1.0\r\nHost: localhost\r\n\r\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/127.0.0.1/9000"
+      interval: 3s
+      timeout: 3s
+      retries: 80
+      start_period: 30s
+volumes:
+  keycloak-proof-db:

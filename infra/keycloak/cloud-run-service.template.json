@@ -1,0 +1,61 @@
+{
+  "apiVersion": "serving.knative.dev/v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "visana-keycloak-dev",
+    "namespace": "visana-erp-dev",
+    "labels": {"cloud.googleapis.com/location": "us-central1"},
+    "annotations": {
+      "run.googleapis.com/ingress": "all",
+      "run.googleapis.com/minScale": "1",
+      "run.googleapis.com/maxScale": "1"
+    }
+  },
+  "spec": {
+    "template": {
+      "metadata": {
+        "annotations": {
+          "run.googleapis.com/execution-environment": "gen2",
+          "run.googleapis.com/cpu-throttling": "false",
+          "run.googleapis.com/container-dependencies": "{\"keycloak\":[\"cloud-sql-proxy\"]}"
+        }
+      },
+      "spec": {
+        "serviceAccountName": "visana-keycloak-dev@visana-erp-dev.iam.gserviceaccount.com",
+        "containerConcurrency": 20,
+        "timeoutSeconds": 300,
+        "containers": [
+          {
+            "name": "keycloak",
+            "image": "${KEYCLOAK_IMAGE}",
+            "args": ["start", "--optimized", "--import-realm"],
+            "ports": [{"name": "http1", "containerPort": 8080}],
+            "resources": {"limits": {"cpu": "2", "memory": "2Gi"}},
+            "env": [
+              {"name": "KC_HOSTNAME", "value": "${KEYCLOAK_HOSTNAME}"},
+              {"name": "KC_DB_URL", "value": "jdbc:postgresql://127.0.0.1:5432/keycloak_dev"},
+              {"name": "KC_DB_USERNAME", "value": "keycloak_app_dev"},
+              {"name": "KC_DB_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "visana-dev-keycloak-db-password", "key": "1"}}},
+              {"name": "KC_BOOTSTRAP_ADMIN_USERNAME", "value": "visana-dev-bootstrap"},
+              {"name": "KC_BOOTSTRAP_ADMIN_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "visana-dev-keycloak-bootstrap-password", "key": "1"}}},
+              {"name": "VISANA_KEYCLOAK_HEALTH_CLIENT_SECRET", "valueFrom": {"secretKeyRef": {"name": "visana-dev-keycloak-health-client-secret", "key": "1"}}},
+              {"name": "JAVA_OPTS_KC_HEAP", "value": "-XX:MaxRAMPercentage=65"}
+            ],
+            "startupProbe": {"httpGet": {"path": "/health/ready", "port": 9000}, "periodSeconds": 5, "timeoutSeconds": 3, "failureThreshold": 48},
+            "livenessProbe": {"httpGet": {"path": "/health/live", "port": 9000}, "periodSeconds": 20, "timeoutSeconds": 3, "failureThreshold": 3},
+            "readinessProbe": {"httpGet": {"path": "/health/ready", "port": 9000}, "periodSeconds": 10, "timeoutSeconds": 3, "failureThreshold": 3, "successThreshold": 2}
+          },
+          {
+            "name": "cloud-sql-proxy",
+            "image": "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.25.4@sha256:88501f0a695a586988add1b8a206fdf3f29f9a1a3deeb9b45ef2b1481ea6be83",
+            "args": ["--address=127.0.0.1", "--port=5432", "--health-check", "--http-address=0.0.0.0", "--http-port=9090", "--lazy-refresh", "visana-erp-dev:us-central1:visana-db-dev"],
+            "resources": {"limits": {"cpu": "1", "memory": "512Mi"}},
+            "startupProbe": {"httpGet": {"path": "/startup", "port": 9090}, "periodSeconds": 2, "timeoutSeconds": 1, "failureThreshold": 30},
+            "livenessProbe": {"httpGet": {"path": "/liveness", "port": 9090}, "periodSeconds": 20, "timeoutSeconds": 2, "failureThreshold": 3}
+          }
+        ]
+      }
+    },
+    "traffic": [{"latestRevision": true, "percent": 100}]
+  }
+}

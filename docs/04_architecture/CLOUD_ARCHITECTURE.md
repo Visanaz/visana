@@ -1,6 +1,6 @@
 # Configuración cloud DEV — VISANA
 
-Corrección del mismo [PR #20](https://github.com/Visanaz/visana/pull/20), Draft. Código y pruebas aisladas autorizados; configuración externa, IAM, recursos, merge y despliegue no aplicados. Guía de uso: [README](../../README.md).
+Corrección del mismo [PR #20](https://github.com/Visanaz/visana/pull/20), Draft. L-01–L-06 fue autorizado y aplicado antes de la preparación actual. La ejecución actual autoriza lectura SQL y preparación/pruebas/publicación de archivos propios; no cambios externos, credenciales, recursos, merge ni despliegue. Guía de uso: [README](../../README.md).
 
 ## Evidencia histórica y captura autenticada del 2026-09-26
 
@@ -116,7 +116,9 @@ Solicitud de Cristian, responsable de la configuración manual. Punto de partida
 
 El PDF «infra visana gemini.pdf» no se encontró en workspace, adjuntos ni Downloads; no fue leído. Las capturas mencionadas no llegaron como archivos independientes en esta solicitud. Se contrastaron los datos transcritos con la consola autenticada y el contrato del HEAD.
 
-### Estado real comprobado
+### Estado previo a L-01–L-06 — snapshot histórico
+
+Las filas siguientes registran la captura anterior al lote. No describen el estado posterior: L-01–L-06 ya aplicado, Allow permite las operaciones y deny sigue desconocido. La lectura SQL nueva y su interpretación aparecen en la sección de validación inferior.
 
 | Elemento | Resultado / límite de evidencia |
 |---|---|
@@ -135,11 +137,11 @@ Fuentes actuales: [runtime](https://console.cloud.google.com/run/detail/us-centr
 
 Los dos bindings adicionales del agente de plataforma están identificados; no se incluye su retirada en el lote. Falta acreditar que se concedieron por error y revisar impacto sobre otros consumidores. El listado global de servicios Cloud Run devolvió «El servidor no pudo completar tu solicitud»; no equivale a ausencia de otros servicios. Conservar el principal y `roles/run.serviceAgent`; cualquier retirada posterior será de bindings concretos, sin reemplazar políticas completas.
 
-### Lote único listo para autorizar, todavía no aplicado
+### Lote L-01–L-06 — propuesta histórica, posteriormente aplicada
 
-Principal **R** = `serviceAccount:984938781030-compute@developer.gserviceaccount.com`. Las cuatro variables GitHub pertenecen a `Visanaz/visana`, nivel repositorio; actualmente ausentes. No se carga una contraseña en GitHub.
+Principal **R** = `serviceAccount:984938781030-compute@developer.gserviceaccount.com`. Las cuatro variables GitHub pertenecen a `Visanaz/visana`, nivel repositorio. La tabla conserva el estado previo y el cambio aprobado: los seis cambios ya están aplicados y no se repiten. No se cargó una contraseña en GitHub.
 
-| ID / destino | Estado actual | Cambio exacto propuesto | Fuente y comprobación | Impacto / reversión |
+| ID / destino | Estado previo | Cambio exacto autorizado | Fuente y comprobación | Impacto / reversión |
 |---|---|---|---|---|
 | L-01 / proyecto `visana-erp-dev`, principal R | Sin permiso SQL get/connect en diagnóstico | Agregar solo binding `roles/cloudsql.client`, sin condición nueva | Runtime real + diagnóstico; tras aprobación comprobar ambas capacidades, con límite de visibilidad deny | Permite transporte Connector a instancias del proyecto; no concede privilegios PostgreSQL. Revertir solo este binding añadido |
 | L-02 / `projects/visana-erp-dev/secrets/visana-dev-db-password`, principal R | Sin permiso de acceso al secreto | Agregar solo binding `roles/secretmanager.secretAccessor` en este secreto, sin condición nueva | Secreto real + diagnóstico; verificar política del recurso y permiso sin leer payload | Permite acceder a versiones de este secreto, no a todos los secretos del proyecto. Revertir solo este binding añadido |
@@ -167,7 +169,7 @@ La aprobación L-01–L-06 no autoriza merge, Ready, despliegue, revisión manua
 | `DEV_HEALTHCHECK_CLIENT_SECRET` | Secreto GitHub ausente | Provisión segura por responsable del cliente real; no enviar por conversación ni reutilizar secretos de ejemplos |
 | `GCP_PROJECT_ID`, `GCP_CREDENTIALS` | Secretos GitHub ya existentes | Conservar. Responsable debe acreditar proyecto e identidad del desplegador sin revelar clave; nombres no prueban valores |
 | GitHub `DB_PASSWORD` | Consumidor histórico demostrado | Conservar: `dev` aún referencia `secrets.DB_PASSWORD` en `.github/workflows/deploy-dev.yml`, blob `acd7ed6099c7264ec3ed03034ab153cb8d0ddc9e`. Ninguno en candidato; `qa`/`main` no ofrecen workflows consultables. No retirar sin inventario completo y aprobación |
-| SQL / privilegios y propiedad | Falta sesión autorizada | Ejecutar consultas de lectura inferiores en `visana_dev`; no abrir redes autorizadas. No conceder/revocar sobre supuestos |
+| SQL / privilegios y propiedad | Comprobados en sesión autorizada posterior | Excesos administrativos confirmados; ajuste preparado y probado solo en aislamiento. Véase validación inferior |
 | Retirada de roles al agente | Falta atribución de error e impacto | No incluida en lote; no tocar `roles/run.serviceAgent` |
 
 ### Keycloak local recuperado
@@ -272,4 +274,104 @@ La [documentación Cloud SQL](https://docs.cloud.google.com/sql/docs/postgres/us
 
 `build.yml` exige CI antes de CD y omite CD para PR; los guards reales aceptan la URL propuesta y mantienen DB_URL/DB_USER, ADC runtime, puerto, referencia fija y cliente técnico. No hace falta sustituir YAML. Se revisó `deploy-cloudrun@v2`, resuelto a `251330ba9a8a34bfbc1622895f42e1d53fd14522`: merge produce `--update-env-vars` y `--update-secrets`; overwrite produciría `--set-*`. La acción añade los flags extra, incluido `--remove-env-vars=DB_PASSWORD` cuando el guard detecta literal. No se incorpora DB_PASSWORD al archivo de variables. [Código oficial de esa revisión](https://github.com/google-github-actions/deploy-cloudrun/blob/251330ba9a8a34bfbc1622895f42e1d53fd14522/src/main.ts), [semántica gcloud](https://docs.cloud.google.com/sdk/gcloud/reference/run/deploy). La transición está preparada para el futuro despliegue aprobado; no se hizo una revisión manual ni se borraron variables ajenas.
 
-**Bloqueado para solicitar integración:** lote IAM/GitHub sin aprobar/aplicar; atributos/esquema/privilegios SQL sin verificar; cierre administrativo de credencial antigua y correspondencia de nueva credencial pendientes; issuer/cliente/claims/secreto OIDC cloud ausentes; correspondencia del desplegador pendiente y decisión de soporte Spring ya documentada. No solicitar merge mientras esos requisitos sigan abiertos. Después, identificar el SHA vigente y explicar que integrarlo en `dev` ejecutará un nuevo CI/CD y puede aplicar Flyway al arrancar. Configurar variables/permisos no demuestra arranque exitoso.
+**Estado actual para integración:** L-01–L-06 aplicado y SQL comprobado; ajuste de privilegios aún no aplicado. Cierre administrativo de credencial antigua y correspondencia de nueva credencial pendientes; Keycloak preparado/probado en aislamiento, sin issuer/cliente cloud creado. Correspondencia del desplegador y decisión de soporte Spring siguen pendientes. No solicitar merge mientras esos requisitos sigan abiertos. Integrar en `dev` ejecutará un nuevo CI/CD y puede aplicar Flyway al arrancar. Configurar variables/permisos no demuestra arranque exitoso.
+
+## Validación SQL y preparación Keycloak 2026-09-28
+
+Continuación autorizada por Cristian desde HEAD `75eab56fe7386c392485e33a528e582e8995709d`, [CI 36465924880 SUCCESS](https://github.com/Visanaz/visana/actions/runs/36465924880), CD omitido. No se repitió L-01–L-06 ni se amplió la auditoría IAM/Spring. Se conservan la incertidumbre de deny, la correspondencia del desplegador pendiente y la retirada separada de bindings del agente serverless.
+
+### Resultado SQL ejecutado — HECHO
+
+Fuente: [Cloud SQL Studio](https://console.cloud.google.com/sql/instances/visana-db-dev/studio?project=visana-erp-dev), autenticación completada manualmente por Cristian. Se ejecutaron bloques `BEGIN READ ONLY` / `ROLLBACK`, con `transaction_read_only=on`; primero contexto, después metadata en una misma transacción. El bloque reproducible revisado está en [inspect_visana_dev.sql](../../scripts/ci/inspect_visana_dev.sql). No se consultaron datos comerciales, `pg_authid`, contraseñas ni hashes.
+
+| Metadata observada | Resultado |
+|---|---|
+| Sesión y objetivo | `current_database=visana_dev`; `current_user=session_user=visana_app_dev`; permisos evaluados de ese usuario |
+| Servidor | PostgreSQL **18.6** |
+| Esquema efectivo | `public`; `current_schemas={public}`; `search_path="$user", public`; sin overrides pertinentes en `pg_db_role_setting` |
+| Atributos | LOGIN e INHERIT true; SUPERUSER, REPLICATION y BYPASSRLS false; **CREATEDB y CREATEROLE true** |
+| Membresía directa | `cloudsqlsuperuser`, otorgada por `cloudsqladmin`; admin false, inherit true, set true |
+| Membresías indirectas efectivas | Profundidad 2: `pg_signal_backend`, `pg_monitor`, `pg_checkpoint`; profundidad 3: `pg_stat_scan_tables`, `pg_read_all_stats`, `pg_read_all_settings`; USAGE/SET disponibles |
+| Opción admin en la cadena | La arista `cloudsqlsuperuser → pg_checkpoint` tiene admin true; no atribuir por ello administración de todas las membresías al usuario aplicación |
+| Base | Propietario `cloudsqlsuperuser`; CONNECT, CREATE y TEMPORARY true; PUBLIC recibe CONNECT y TEMPORARY |
+| Esquema public | Propietario `pg_database_owner`; USAGE y CREATE true para aplicación; PUBLIC recibe únicamente USAGE |
+| Objetos | **0 tablas, 0 secuencias, 0 historiales Flyway**; ningún propietario/permiso de objetos por evaluar |
+
+**A. Privilegios:** los derechos necesarios para V1–V8 están presentes. La BD vacía es el estado anterior a la primera migración, no un error. Sobran CREATEDB/CREATEROLE y la membresía administrativa con derechos indirectos. CREATE en `public` deriva actualmente de la propiedad heredada de la base: revocar la membresía sin conceder antes USAGE/CREATE directos puede impedir las migraciones. Las migraciones reales no requieren crear bases/roles ni esas capacidades administrativas.
+
+**B. Autenticación:** la sesión de Studio como `visana_app_dev` fue observada y pudo leer metadata. No se utilizó el valor enviado por conversación. Esto no verifica qué payload contiene Secret Manager ni la revocación de una credencial anterior.
+
+**C. Cloud Run/Connector:** conexión del backend mediante ADC, referencia Secret Manager y Connector **todavía no probada**. La lectura de Studio usa otro camino.
+
+[visana_dev_privileges_proposal.sql](../../scripts/ci/visana_dev_privileges_proposal.sql) propone, para aprobación posterior: conservar CONNECT, conceder USAGE/CREATE directos en `public`, revocar `cloudsqlsuperuser` y fijar NOCREATEDB/NOCREATEROLE. Tiene guards de base, propietario, atributos y ausencia de objetos. No altera propietarios ni ACL de PUBLIC; el dueño futuro de tablas será la identidad que ejecute Flyway. Antes de aplicarlo, un administrador autorizado debe repetir metadata y revisar consumidores; después, verificar desde una sesión nueva del usuario, sin membresías administrativas indirectas. **No ejecutado contra Cloud SQL.**
+
+Prueba de la propuesta: `python -B scripts/ci/check_sql_privileges_proposal.py`, PostgreSQL 18.3 desechable, `--network none`, sin puertos ni credenciales reales. Reproduce la propiedad heredada, rechaza base incorrecta, aplica únicamente allí el ajuste y ejecuta los SQL V1–V8 como usuario restringido: **PASS, 23 tablas, todas propiedad de visana_app_dev**; CONNECT/USAGE/CREATE conservados y los tres privilegios administrativos comprobados quedan false. No sustituye una ejecución real de Flyway/Cloud SQL.
+
+### Declaración de Cristian sobre credenciales — PENDIENTE
+
+Fuente: respuesta agrupada del responsable en esta conversación, 2026-09-28. Declara creación de base/usuario y versión 1 habilitada; no confirma el usuario de la credencial expuesta, rotación/revocación, actor/operación/fecha, correspondencia de versión 1 con la contraseña de `visana_app_dev`, ni actualización de todos los consumidores. Declara que no hay nueva revisión Cloud Run consumiendo esa referencia y que `DB_PASSWORD` histórico sigue utilizado en `dev`.
+
+Se registra como **declaración del responsable**, no verificación técnica. Incidencia abierta; `DEV_DB_CREDENTIAL_ROTATION_CONFIRMED` no se establece en true. No se leyó payload ni se probó la credencial anterior. La confirmación de acceso al editor no completa los datos administrativos pendientes.
+
+Operación separada para futura aprobación: identificar primero el usuario y consumidores de la credencial expuesta; el responsable autorizado rota/revoca directamente en PostgreSQL, provisiona la credencial correcta por interfaz segura/versionado y actualiza cada consumidor inventariado. Registrar usuario, actor, operación, fecha y consumidores pendientes, sin valores. No reemplazar/eliminar `DB_PASSWORD` histórico hasta atender su consumidor. Crear un usuario nuevo no acredita esa rotación.
+
+### Keycloak recuperado y diferencias de la preparación
+
+Fuentes acotadas: export raíz del backend y Compose/realms referenciados en `worktrees/visana-front-visual/dev/local-demo` y `e2e/auth`. Inspección de solo lectura del contenedor existente `visana-local-demo-keycloak-1`: **Keycloak 26.7.3**, JVM 21.0.12.1; imagen oficial fijada también por digest en el Dockerfile preparado. El SDK Admin 26.0.0 del backend no es la versión del servidor.
+
+El demo existente usa `start-dev`, puertos loopback 8080/9000, almacenamiento Keycloak dev-file/H2 en tmpfs y realm `visana-local`; su PostgreSQL 16 separado sirve al backend, no acredita persistencia PostgreSQL de Keycloak. E2E usa realm `visana-e2e`. Sus clientes SPA son públicos, sin service account y sin scope de salud. No se encontró cliente Swagger específico ni técnico de salud. No se modificaron esos procesos, puertos, volúmenes ni exports.
+
+Se reutiliza el realm raíz **visana-erp**, roles SUPER_ADMIN/DISTRIBUTOR/AFFILIATE/EXTERNAL_CUSTOMER y mapper `tenant_id`, sin copiar usuarios, credenciales, claves ni SMTP. En el archivo preparado `visana-backend` se mantiene **deshabilitado** hasta aprobar redirects y flujos humanos. Se añade el cliente técnico confidencial **visana-dev-health**, service account, sin login humano/direct grants/implicit, scope `visana.health`, mapper de sujeto y audience exclusivamente `visana-dev-health`, TTL 60 s. El secreto es un placeholder resuelto al arrancar. El `sub` se obtiene de la cuenta real persistida; ningún UUID local se carga en GitHub.
+
+### Archivos y pruebas ejecutadas
+
+| Archivo | Función |
+|---|---|
+| `infra/keycloak/Dockerfile`, `.dockerignore`, `keycloak.conf` | Imagen oficial 26.7.3 por digest, build PostgreSQL/health/metrics; contexto limitado; `start --optimized` sin `start-dev` |
+| `infra/keycloak/visana-erp-realm.json` | Importación sanitizada no destructiva; contrato técnico completo |
+| `infra/keycloak/cloud-run-service.template.json` | Propuesta de servicio con hostname/digest pendientes, proxy, secretos numéricos, probes y recursos concretos |
+| `infra/keycloak/postgres-proposal.sql` | Nueva base/usuario exclusivos de Keycloak, privilegios limitados, sin contraseña literal; **no aplicado** |
+| `infra/keycloak/test-postgres-init.sql`, `compose.keycloak-test.yml` | Fixture aislada con usuario limitado, secretos sintéticos, puertos aleatorios loopback y volumen propio |
+| `scripts/ci/keycloak_dev.py`, `test_keycloak_dev.py` | Validar, probar y renderizar sin llamadas cloud; guards de hostname, digest y alcance |
+| `KeycloakHealthContractTest.java` | Token firmado de Keycloak real contra SecurityConfig/conversor existentes; prueba enfocada habilitada solo por fixture aislada |
+| `scripts/ci/inspect_visana_dev.sql`, `visana_dev_privileges_proposal.sql`, `check_sql_privileges_proposal.py` | Lectura reproducible, ajuste propuesto y verificación sintética |
+| `.github/workflows/openapi-contract.yml` | Dos pasos de prueba en el CI existente; ningún CD nuevo ni secretos cloud |
+
+Ejecución local real: **8 comprobaciones PASS** con Keycloak 26.7.3 y PostgreSQL 18.3; 14 guards Python PASS y propuesta SQL PASS. La prueba Java enfocada ejecutó **1 test, 0 fallos, 0 errores, 0 omitidos** con Maven/JDK 21 en contenedor, fuente montada en lectura y salida fuera de Git. No se arranca la aplicación completa ni su DataSource real.
+
+- Arranque `start --optimized` con PostgreSQL externo limitado; health started/ready/live UP.
+- Discovery/JWKS; token client credentials con issuer/azp/sub/audience/scope exigidos. Nimbus del backend valida firma, issuer y vigencia con JWKS real.
+- Reemplazo del contenedor conservando su BD: mismo sujeto, claves de firma y modificación sintética del realm; import no sobrescribe el realm existente.
+- GET exacto `/actuator/health` → **200/UP**; negocio, docs, subrutas Actuator y POST health → **403**; health anónimo → **401**. Política del backend sin cambios.
+- Binario Auth Proxy 2.25.4 y flags propuestos disponibles: prueba de versión/ayuda, **sin ADC ni conexión cloud**.
+- Valores sintéticos generados/tokens ausentes de capas guardadas de imagen, logs y artefactos retenidos. Fixtures con secretos/tokens se eliminan; recursos Docker exclusivos se limpian. La búsqueda cubre los valores generados por la prueba, no certifica ausencia universal de secretos de terceros.
+
+Registros locales sanitizados: `C:\Users\Kmilo\.codex\backups\visana-ci-cd-20260926\keycloak-proof-20260928\result.json` y reporte Surefire dentro de `backend-build`; metadata SQL capturada en `sql-readonly-20260928-metadata.json` del mismo respaldo. No se publican fixtures ni respaldos. CI vuelve a ejecutar las comprobaciones sobre el nuevo SHA; su resultado debe leerse en el run correspondiente, sin atribuirle anticipadamente este PASS local.
+
+### Lote Keycloak DEV propuesto, no aplicado
+
+**Una propuesta para aprobación posterior**, independiente de que el backend ya esté desplegado. Los nombres nuevos siguientes no se presentan como recursos existentes. Preparar los archivos y publicar el PR no autoriza este lote.
+
+| Destino | Cambio propuesto |
+|---|---|
+| Cloud Run | Crear `visana-keycloak-dev`, `visana-erp-dev`, `us-central1`, gen2; publicar imagen propia en `visana-repo/visana-keycloak-dev` por digest inmutable, sin crear otro repositorio AR |
+| PostgreSQL | En `visana-db-dev` crear **keycloak_dev** y **keycloak_app_dev**, usuario integrado sin SUPERUSER/CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS, dueño solo de su nueva base; verificar ausencia de membresías administrativas. Mantener `visana_dev` separada. Keycloak inicializará/migrará su propia BD únicamente tras aprobación |
+| Runtime | Crear SA dedicada `visana-keycloak-dev@visana-erp-dev.iam.gserviceaccount.com`; SQL Client en el proyecto; Secret Accessor únicamente sobre los tres secretos inferiores. No usar ni alterar la SA del backend o agente serverless |
+| Secret Manager | Responsable provisiona de forma segura `visana-dev-keycloak-db-password:1`, `visana-dev-keycloak-bootstrap-password:1`, `visana-dev-keycloak-health-client-secret:1`; no reutilizar credenciales locales, exports ni conversación |
+| Desplegador | Actor histórico candidato `github-actions-dev@visana-erp-dev.iam.gserviceaccount.com`, cuya correspondencia actual aún debe acreditarse. Conceder `actAs` solo sobre la SA nueva al actor verificado y permisos mínimos de publicación/despliegue necesarios; no leer `GCP_CREDENTIALS`, cambiar claves ni activar un CD automático |
+| CPU/memoria | Keycloak 2 vCPU/2 GiB, heap 65%, pool DB 1–10; Auth Proxy 1 vCPU/512 MiB: total 3 vCPU/2.5 GiB por instancia, CPU siempre asignada |
+| Escalado | Mínimo/máximo **1 a nivel servicio**, concurrencia 20, timeout 300 s, cache local DEV; sin tags ni tráfico dividido. No es HA y el máximo no garantiza ausencia de solapamiento transitorio |
+| Hostname y exposición | Origen HTTPS real aprobado, verificado desde `status.url`; el render exige origen y digest. Inicialmente privado por IAM; publicar discovery/token requiere aprobar `allUsers roles/run.invoker` **solo para el nuevo IdP**. El manifiesto no concede ese binding |
+| Red | Proxy 2.25.4 fijado por digest, ADC de SA dedicada, loopback 127.0.0.1:5432 hacia instancia existente por PUBLIC. Sin nuevas redes autorizadas, VPC, NAT ni claves ADC. Requiere salida 443/3307 |
+| Probes | Proxy startup `/startup` y liveness `/liveness` en 9090; Keycloak espera startup del proxy, startup/readiness `/health/ready` y liveness `/health/live` en 9000. El puerto de entrada es 8080; management no se publica como puerto del servicio |
+| Persistencia y coste | Cloud SQL persiste realm, sujetos y claves; nueva BD comparte capacidad/fallo de instancia. Verificar backup/restauración antes de inicializar. Aprobar coste de 3 vCPU/2.5 GiB siempre asignados/min 1, posible solapamiento, DB/conexiones/disco/backups, imagen, logs, secretos y tráfico; no presupuestar como gratuito |
+
+La imagen Keycloak incluye driver PostgreSQL, **no el Connector Java del backend**. El sidecar aplica el transporte Cloud SQL. Tramo JDBC→proxy dentro del mismo sandbox/loopback sin cifrado; tramo proxy→Cloud SQL con TLS/certificados efímeros. No se configuran `sslmode=disable`, certificados inseguros ni desactivación de validación del transporte cloud. Cloud Run termina HTTPS, reenvía a HTTP 8080 con hostname estricto y `proxy-headers=xforwarded`; esos encabezados se confían únicamente al proxy de entrada controlado. [Requisitos oficiales del Auth Proxy](https://docs.cloud.google.com/sql/docs/postgres/sql-proxy), [release 2.25.4](https://github.com/GoogleCloudPlatform/cloud-sql-proxy/releases/tag/v2.25.4), [proxy de Keycloak](https://www.keycloak.org/server/reverseproxy).
+
+**Acceso administrativo propuesto:** inicializar en privado con bootstrap temporal; el responsable autorizado crea administrador permanente con MFA y comprueba acceso antes de publicar el IdP. Acceso privado mediante identidad Google autorizada en `X-Serverless-Authorization` y token Admin Keycloak en `Authorization`, sin capturar valores. Retirar el administrador temporal y las referencias de bootstrap en una revisión posterior controlada; revisar versión/acceso de su secreto mediante aprobación correspondiente. Cuando el servicio sea público, las rutas administrativas comparten el mismo origen y son alcanzables por Internet: IAM de Cloud Run no las separa de token/discovery. No afirmar aislamiento de consola ni MFA ya configurado. Esta exposición y la operación administrativa deben aprobarse expresamente antes de publicar. [Bootstrap temporal](https://www.keycloak.org/server/bootstrap-admin-recovery), [cabeceras de autenticación Cloud Run](https://docs.cloud.google.com/run/docs/authenticating/service-to-service).
+
+**Límites operativos:** cache local y réplica objetivo 1 son una elección DEV sin clustering. Actualizaciones requieren ventana de mantenimiento, backup y revisión de compatibilidad; evitar escrituras administrativas durante solapamiento y no cambiar versión/esquema con dos versiones concurrentes. No usar `import --override` ni migraciones destructivas. El máximo Cloud Run puede excederse brevemente; una configuración min/max no prueba actualización sin solapamiento. [Máximo de instancias](https://docs.cloud.google.com/run/docs/configuring/max-instances), [importación que omite realms existentes](https://www.keycloak.org/server/importExport).
+
+Compatibilidad respaldada además de la prueba: **Keycloak 26.7.3 admite PostgreSQL 18**, según su [guía de actualización versionada](https://www.keycloak.org/docs/26.7.3/upgrading/). Construcción optimizada y health: [contenedores](https://www.keycloak.org/server/containers), [health](https://www.keycloak.org/observability/health). Orden de sidecars/probes: [contenedores Cloud Run](https://docs.cloud.google.com/run/docs/configuring/services/containers), [healthchecks](https://docs.cloud.google.com/run/docs/configuring/healthchecks). El servicio nuevo no fue instalado ni estas probes verificadas en cloud.
+
+**Datos a obtener después del primer despliegue aprobado:** origen HTTPS e issuer reales mediante discovery, JWKS y token firmado del cliente cloud; `azp=visana-dev-health`, audience exclusivamente igual, scope `visana.health` y **sub real persistente**. Verificar contrato antes de cargar las cuatro variables OIDC GitHub y `DEV_HEALTHCHECK_CLIENT_SECRET` por canal seguro. No copiar sujeto, URL HTTP ni credenciales del laboratorio. El secreto cloud del cliente y el que consume GitHub deben corresponder sin mostrarlos. Esa carga y el posterior despliegue del backend requieren autorizaciones correspondientes; no se realizaron aquí.
