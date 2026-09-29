@@ -23,7 +23,12 @@ def good_evidence(now=NOW):
     fence = now - timedelta(hours=2)
     backup = c.Backup("backup-1", "SUCCESSFUL", fence + timedelta(minutes=5),
                       now - timedelta(minutes=20), fence)
-    return c.StopEvidence(True, True, True, True, True, True, fence, fence, backup)
+    metadata = c.BackupMetadata("backup-1", "SUCCESSFUL", backup.started_at,
+                                backup.ended_at, "AUTOMATED", None, c.SQL, now)
+    return c.StopEvidence(True, True, True, True, True, True, fence, fence, backup,
+                          c.FenceEvidence(True, True, True, True),
+                          c.QuiescenceEvidence(True, True, True, True, True, True, True),
+                          metadata, True, True)
 
 
 class FakeRuntime:
@@ -578,6 +583,16 @@ class A06ContractTests(unittest.TestCase):
         controller.execute(request("STOP_DEV", executionId="evt-2"))
         self.assertLess(runtime.actions.index("stop_run"), runtime.actions.index("stop_evidence"))
         self.assertEqual(1, runtime.actions.count("stop_run"))
+
+    def test_offline_stop_requires_a06_evidence(self):
+        runtime, store = FakeRuntime(), c.MemoryStore()
+        controller = c.Controller(store, runtime, lambda: NOW, SCHEDULE)
+        controller.execute(request())
+        runtime.proof = replace(runtime.proof, a06_quiescence=None)
+        with self.assertRaises(c.ControlError) as caught:
+            controller.execute(request("STOP_DEV", executionId="evt-2"))
+        self.assertEqual("A06_STOP_NOT_ALLOWED", caught.exception.code)
+        self.assertNotIn("stop_sql", runtime.actions)
 
     def test_workflow_preflight_has_a06_gates_and_no_cloud_calls(self):
         source = json.loads(Path(__file__).with_name("workflow.json").read_text(encoding="utf-8-sig"))

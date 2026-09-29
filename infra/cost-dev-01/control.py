@@ -218,6 +218,11 @@ class StopEvidence:
     fence_at: datetime | None
     last_write_at: datetime | None
     backup: Backup | None
+    a06_fence: FenceEvidence | None = None
+    a06_quiescence: QuiescenceEvidence | None = None
+    a06_backup: BackupMetadata | None = None
+    no_later_writes: bool | None = None
+    recovery_coverage_confirmed: bool | None = None
 
 
 class Gate(str, Enum):
@@ -571,6 +576,16 @@ class Controller:
             first = self.runtime.stop_evidence()
             item = self.transition(item, State.WAITING_BACKUP, eid, op, actor)
             backup_id = verify_stop(first, self.now(), self.schedule["stopDeadline"])
+            fence_gate = evaluate_fence(first.a06_fence) if first.a06_fence else Gate.UNKNOWN
+            quiescence_gate = (evaluate_quiescence(first.a06_quiescence)
+                               if first.a06_quiescence else Gate.UNKNOWN)
+            coverage_gate = evaluate_backup_coverage(
+                first.a06_backup, fence_established_at=first.fence_at,
+                last_accepted_write_at=first.last_write_at,
+                no_later_writes=first.no_later_writes,
+                recovery_coverage_confirmed=first.recovery_coverage_confirmed)
+            if can_stop_dev(fence_gate, quiescence_gate, coverage_gate) != Gate.ALLOW:
+                raise ControlError("A06_STOP_NOT_ALLOWED")
             if self.runtime.stop_evidence() != first:
                 raise ControlError("STOP_EVIDENCE_CHANGED")
             if not self.runtime.stop_evidence().tags_safe:

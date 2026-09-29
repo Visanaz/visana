@@ -126,6 +126,8 @@ La validación final reconsulta las señales y aborta si cambian. SQL permanece
 encendido ante DENY/UNKNOWN o deadline. `can_stop_dev` devuelve
 `ALLOW/DENY/UNKNOWN`; únicamente ALLOW podría habilitar STOP en un adaptador
 futuro. El simulador con `FakeRuntime` no prueba esas fuentes reales.
+La ruta `Controller.stop` también exige las tres evaluaciones A-06 inyectadas;
+si falta alguna, retorna `A06_STOP_NOT_ALLOWED` antes de `STOP_SQL`.
 
 ### Health autenticado para START
 
