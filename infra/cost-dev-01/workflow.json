@@ -6,6 +6,7 @@
         "init": {
           "assign": [
             {"input": "${default(args, {})}"},
+            {"a06": "${default(map.get(input, \"a06\"), {})}"},
             {"operation": "${map.get(input, \"operation\")}"},
             {"dryRun": "${default(map.get(input, \"dryRun\"), true)}"},
             {"projectId": "visana-erp-dev"},
@@ -75,23 +76,35 @@
             "dryRun": true,
             "projectId": "visana-erp-dev",
             "resource": "visana-db-dev/visana-api-dev",
-            "plan": ["VALIDATE_ALLOWLIST", "READ_STATE", "CHECK_SQL", "START_SQL_IF_OFF", "WAIT_SQL_READY", "CHECK_KEYCLOAK_IF_PROVISIONED", "RESTORE_RUN_SCALING", "CHECK_HEALTH", "MARK_ON"],
+            "plan": ["VALIDATE_ALLOWLIST", "READ_STATE", "CHECK_SQL", "START_SQL_IF_OFF", "WAIT_SQL_READY", "CHECK_KEYCLOAK_IF_PROVISIONED", "RESTORE_RUN_SCALING", "CHECK_AUTHENTICATED_HEALTH_AND_DATASOURCE", "MARK_ON"],
+            "authHealth": "BLOCKED_NOT_AVAILABLE_WHILE_KEYCLOAK_NOT_PROVISIONED",
             "cloudWrites": 0
           }
         }
       },
       {
         "stopPlan": {
+          "switch": [
+            {"condition": "${map.get(a06, \"logicalFence\") == false or map.get(a06, \"runManualZero\") == false or map.get(a06, \"runOperationComplete\") == false or map.get(a06, \"allWriteRoutesBlocked\") == false or map.get(a06, \"deploymentsIdle\") == false or map.get(a06, \"sqlOperationsIdle\") == false or map.get(a06, \"controllerIdle\") == false or map.get(a06, \"drainComplete\") == false or map.get(a06, \"activeWritesZero\") == false or map.get(a06, \"otherConsumersIdle\") == false or map.get(a06, \"noLaterWrites\") == false or map.get(a06, \"recoveryCoverageConfirmed\") == false or map.get(a06, \"backupCoverage\") == \"NOT_COVERED\"}", "next": "stopDenied"},
+            {"condition": "${map.get(a06, \"logicalFence\") == true and map.get(a06, \"runManualZero\") == true and map.get(a06, \"runOperationComplete\") == true and map.get(a06, \"allWriteRoutesBlocked\") == true and map.get(a06, \"deploymentsIdle\") == true and map.get(a06, \"sqlOperationsIdle\") == true and map.get(a06, \"controllerIdle\") == true and map.get(a06, \"drainComplete\") == true and map.get(a06, \"activeWritesZero\") == true and map.get(a06, \"otherConsumersIdle\") == true and map.get(a06, \"noLaterWrites\") == true and map.get(a06, \"recoveryCoverageConfirmed\") == true and map.get(a06, \"backupCoverage\") == \"COVERED\"}", "next": "stopPreflightAllowed"}
+          ],
+          "next": "stopUnknown"
+        }
+      },
+      {
+        "stopPreflightAllowed": {
           "return": {
-            "status": "DRY_RUN",
+            "status": "PREFLIGHT_ALLOW_SIMULATED",
             "dryRun": true,
             "projectId": "visana-erp-dev",
             "resource": "visana-db-dev/visana-api-dev",
-            "plan": ["VALIDATE_ALLOWLIST", "READ_STATE", "FREEZE", "CHECK_DEPLOYMENTS", "CHECK_QUIESCENCE_AND_FENCE", "VERIFY_NEW_RECOVERABLE_BACKUP", "CHECK_NO_LATER_WRITES", "STOP_RUN", "CHECK_TAGS", "STOP_SQL_LAST", "MARK_OFF"],
+            "plan": ["VALIDATE_ALLOWLIST", "READ_STATE", "FREEZE_CI_QA", "FENCE_RUN_MANUAL_ZERO", "VERIFY_TAGS_AND_DEPLOYMENTS", "DRAIN_AND_VERIFY_QUIESCENCE", "VERIFY_NEW_RECOVERABLE_BACKUP", "FINAL_REVALIDATION", "STOP_SQL_LAST", "MARK_OFF"],
             "cloudWrites": 0
           }
         }
       },
+      {"stopDenied": {"return": {"status": "DENY", "dryRun": true, "cloudWrites": 0}}},
+      {"stopUnknown": {"return": {"status": "UNKNOWN", "dryRun": true, "cloudWrites": 0}}},
       {
         "status": {
           "return": {

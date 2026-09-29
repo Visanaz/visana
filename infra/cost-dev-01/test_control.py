@@ -420,5 +420,174 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotIn("requests.", source)
 
 
+class A06ContractTests(unittest.TestCase):
+    def fence(self, **changes):
+        return replace(c.FenceEvidence(True, True, True, True), **changes)
+
+    def quiescence(self, **changes):
+        return replace(c.QuiescenceEvidence(True, True, True, True, True, True, True), **changes)
+
+    def backup(self, **changes):
+        fence = datetime(2026, 9, 29, 17, 45, tzinfo=c.BOGOTA)
+        backup = c.BackupMetadata("run-1", "SUCCESSFUL",
+                                  fence + timedelta(minutes=15), fence + timedelta(minutes=30),
+                                  "AUTOMATED", None, c.SQL, fence + timedelta(minutes=40))
+        return fence, replace(backup, **changes)
+
+    def coverage(self, **changes):
+        fence, backup = self.backup()
+        args = dict(fence_established_at=fence, last_accepted_write_at=None,
+                    no_later_writes=True, recovery_coverage_confirmed=True)
+        args.update(changes)
+        return c.evaluate_backup_coverage(backup, **args)
+
+    def health(self, **changes):
+        return replace(c.HealthEvidence(True, True, True, 200, "UP", True, "UP", "READY"), **changes)
+
+    def test_no_fence(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_fence(self.fence(logical_fence_owned=False)))
+
+    def test_logical_fence_only(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_fence(self.fence(run_manual_zero=False)))
+
+    def test_scaling_zero_all_routes(self):
+        self.assertEqual(c.Gate.ALLOW, c.evaluate_fence(self.fence()))
+
+    def test_tag_still_accessible(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_fence(self.fence(all_write_routes_blocked=False)))
+
+    def test_fence_unknown(self):
+        self.assertEqual(c.Gate.UNKNOWN, c.evaluate_fence(self.fence(run_operation_complete=None)))
+
+    def test_drain_incomplete(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_quiescence(self.quiescence(drain_complete=False)))
+
+    def test_deployment_in_progress(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_quiescence(self.quiescence(deployments_idle=False)))
+
+    def test_concurrent_transition(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_quiescence(self.quiescence(controller_transition_idle=False)))
+
+    def test_all_quiescence_signals(self):
+        self.assertEqual(c.Gate.ALLOW, c.evaluate_quiescence(self.quiescence()))
+
+    def test_unknown_active_writes(self):
+        self.assertEqual(c.Gate.UNKNOWN, c.evaluate_quiescence(self.quiescence(active_writes_zero=None)))
+
+    def test_backup_success_covers_fence(self):
+        self.assertEqual(c.Coverage.COVERED, self.coverage())
+
+    def test_backup_too_early(self):
+        fence, backup = self.backup(start_time=datetime(2026, 9, 29, 17, 44, tzinfo=c.BOGOTA))
+        self.assertEqual(c.Coverage.NOT_COVERED, c.evaluate_backup_coverage(
+            backup, fence_established_at=fence, last_accepted_write_at=None,
+            no_later_writes=True, recovery_coverage_confirmed=True))
+
+    def test_backup_running(self):
+        fence, backup = self.backup(status="RUNNING")
+        self.assertEqual(c.Coverage.NOT_COVERED, c.evaluate_backup_coverage(
+            backup, fence_established_at=fence, last_accepted_write_at=None,
+            no_later_writes=True, recovery_coverage_confirmed=True))
+
+    def test_backup_failed(self):
+        fence, backup = self.backup(status="FAILED")
+        self.assertEqual(c.Coverage.NOT_COVERED, c.evaluate_backup_coverage(
+            backup, fence_established_at=fence, last_accepted_write_at=None,
+            no_later_writes=True, recovery_coverage_confirmed=True))
+
+    def test_backup_other_instance(self):
+        fence, backup = self.backup(instance="other")
+        self.assertEqual(c.Coverage.NOT_COVERED, c.evaluate_backup_coverage(
+            backup, fence_established_at=fence, last_accepted_write_at=None,
+            no_later_writes=True, recovery_coverage_confirmed=True))
+
+    def test_backup_metadata_missing(self):
+        fence, backup = self.backup(end_time=None)
+        self.assertEqual(c.Coverage.UNKNOWN, c.evaluate_backup_coverage(
+            backup, fence_established_at=fence, last_accepted_write_at=None,
+            no_later_writes=True, recovery_coverage_confirmed=True))
+
+    def test_write_after_fence(self):
+        fence, backup = self.backup()
+        self.assertEqual(c.Coverage.NOT_COVERED, c.evaluate_backup_coverage(
+            backup, fence_established_at=fence, last_accepted_write_at=fence + timedelta(seconds=1),
+            no_later_writes=True, recovery_coverage_confirmed=True))
+
+    def test_timezone_at_window_boundary(self):
+        fence, backup = self.backup(start_time=datetime(2026, 9, 30, 3, 0, tzinfo=timezone.utc),
+                                    end_time=datetime(2026, 9, 30, 3, 10, tzinfo=timezone.utc),
+                                    queried_at=datetime(2026, 9, 30, 3, 20, tzinfo=timezone.utc))
+        self.assertEqual(c.Coverage.COVERED, c.evaluate_backup_coverage(
+            backup, fence_established_at=fence, last_accepted_write_at=None,
+            no_later_writes=True, recovery_coverage_confirmed=True))
+
+    def test_backup_type_not_r1(self):
+        fence, backup = self.backup(backup_type="ON_DEMAND")
+        self.assertEqual(c.Coverage.NOT_COVERED, c.evaluate_backup_coverage(
+            backup, fence_established_at=fence, last_accepted_write_at=None,
+            no_later_writes=True, recovery_coverage_confirmed=True))
+
+    def test_recovery_proof_missing(self):
+        self.assertEqual(c.Coverage.UNKNOWN, self.coverage(recovery_coverage_confirmed=None))
+
+    def test_later_write_status_unknown(self):
+        self.assertEqual(c.Coverage.UNKNOWN, self.coverage(no_later_writes=None))
+
+    def test_health_200_up(self):
+        result = c.evaluate_authenticated_health(self.health())
+        self.assertEqual((c.Gate.ALLOW,) * 4,
+                         (result.process_ready, result.application_healthy,
+                          result.database_healthy, result.overall))
+
+    def test_health_200_down(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_authenticated_health(self.health(body_status="DOWN")).overall)
+
+    def test_health_401(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_authenticated_health(self.health(http_status=401)).overall)
+
+    def test_health_403(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_authenticated_health(self.health(http_status=403)).overall)
+
+    def test_health_timeout(self):
+        self.assertEqual(c.Gate.DENY, c.evaluate_authenticated_health(self.health(timed_out=True)).overall)
+
+    def test_idp_not_provisioned(self):
+        self.assertEqual(c.Gate.UNKNOWN, c.evaluate_authenticated_health(
+            self.health(idp_status="NOT_PROVISIONED")).overall)
+
+    def test_datasource_not_visible(self):
+        result = c.evaluate_authenticated_health(self.health(datasource_included=None))
+        self.assertEqual(c.Gate.UNKNOWN, result.database_healthy)
+        self.assertEqual(c.Gate.UNKNOWN, result.overall)
+
+    def test_stop_only_all_green(self):
+        self.assertEqual(c.Gate.ALLOW, c.can_stop_dev(c.Gate.ALLOW, c.Gate.ALLOW, c.Coverage.COVERED))
+
+    def test_stop_denied_by_any_failure(self):
+        self.assertEqual(c.Gate.DENY, c.can_stop_dev(c.Gate.ALLOW, c.Gate.DENY, c.Coverage.COVERED))
+
+    def test_stop_unknown_fails_closed(self):
+        self.assertEqual(c.Gate.UNKNOWN, c.can_stop_dev(c.Gate.ALLOW, c.Gate.UNKNOWN, c.Coverage.COVERED))
+        self.assertNotEqual(c.Gate.ALLOW, c.can_stop_dev(c.Gate.ALLOW, c.Gate.ALLOW, c.Coverage.UNKNOWN))
+
+    def test_offline_stop_scales_run_before_backup_evidence(self):
+        runtime, store = FakeRuntime(), c.MemoryStore()
+        controller = c.Controller(store, runtime, lambda: NOW, SCHEDULE)
+        controller.execute(request())
+        runtime.actions.clear()
+        controller.execute(request("STOP_DEV", executionId="evt-2"))
+        self.assertLess(runtime.actions.index("stop_run"), runtime.actions.index("stop_evidence"))
+        self.assertEqual(1, runtime.actions.count("stop_run"))
+
+    def test_workflow_preflight_has_a06_gates_and_no_cloud_calls(self):
+        source = json.loads(Path(__file__).with_name("workflow.json").read_text(encoding="utf-8-sig"))
+        encoded = json.dumps(source)
+        for required in ("logicalFence", "runManualZero", "allWriteRoutesBlocked",
+                         "activeWritesZero", "backupCoverage", "stopUnknown"):
+            self.assertIn(required, encoded)
+        self.assertNotIn('"call"', encoded)
+        self.assertIn("LIVE_DISABLED_PENDING_A07_GATES", encoded)
+
+
 if __name__ == "__main__":
     unittest.main()

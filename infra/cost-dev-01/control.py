@@ -75,10 +75,10 @@ NEXT = {
     State.WAITING_SQL: {State.STARTING_SERVICES, State.ERROR},
     State.STARTING_SERVICES: {State.ON, State.ERROR},
     State.ON: {State.FREEZING},
-    State.FREEZING: {State.QUIESCING, State.MANUAL_HOLD},
+    State.FREEZING: {State.STOPPING_SERVICES, State.MANUAL_HOLD},
+    State.STOPPING_SERVICES: {State.QUIESCING, State.MANUAL_HOLD},
     State.QUIESCING: {State.WAITING_BACKUP, State.MANUAL_HOLD},
-    State.WAITING_BACKUP: {State.STOPPING_SERVICES, State.MANUAL_HOLD},
-    State.STOPPING_SERVICES: {State.STOPPING_SQL, State.MANUAL_HOLD},
+    State.WAITING_BACKUP: {State.STOPPING_SQL, State.MANUAL_HOLD},
     State.STOPPING_SQL: {State.OFF, State.ERROR},
     State.ERROR: set(), State.MANUAL_HOLD: set(),
 }
@@ -220,6 +220,166 @@ class StopEvidence:
     backup: Backup | None
 
 
+class Gate(str, Enum):
+    ALLOW = "ALLOW"
+    DENY = "DENY"
+    UNKNOWN = "UNKNOWN"
+
+
+class Coverage(str, Enum):
+    COVERED = "COVERED"
+    NOT_COVERED = "NOT_COVERED"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class FenceEvidence:
+    logical_fence_owned: bool | None
+    run_manual_zero: bool | None
+    run_operation_complete: bool | None
+    all_write_routes_blocked: bool | None  # Includes every traffic tag/revision.
+
+
+@dataclass(frozen=True)
+class QuiescenceEvidence:
+    effective_fence: bool | None
+    deployments_idle: bool | None
+    sql_operations_idle: bool | None
+    controller_transition_idle: bool | None
+    drain_complete: bool | None
+    active_writes_zero: bool | None
+    other_consumers_idle: bool | None
+
+
+@dataclass(frozen=True)
+class BackupMetadata:
+    backup_id: str | None
+    status: str | None
+    start_time: datetime | None
+    end_time: datetime | None
+    backup_type: str | None
+    error: str | None
+    instance: str | None
+    queried_at: datetime | None
+
+
+@dataclass(frozen=True)
+class HealthEvidence:
+    revision_ready: bool | None
+    resolved_url: bool | None
+    technical_token_valid: bool | None
+    http_status: int | None
+    body_status: str | None
+    datasource_included: bool | None
+    datasource_status: str | None
+    idp_status: str | None
+    timed_out: bool = False
+
+
+@dataclass(frozen=True)
+class HealthAssessment:
+    process_ready: Gate
+    application_healthy: Gate
+    database_healthy: Gate
+    overall: Gate
+
+
+def _all_required(*signals: bool | None) -> Gate:
+    if any(value is False for value in signals):
+        return Gate.DENY
+    if any(value is not True for value in signals):
+        return Gate.UNKNOWN
+    return Gate.ALLOW
+
+
+def evaluate_fence(evidence: FenceEvidence) -> Gate:
+    """CAS ownership is only a logical fence; Run zero and all routes prove the write fence."""
+    return _all_required(evidence.logical_fence_owned, evidence.run_manual_zero,
+                         evidence.run_operation_complete, evidence.all_write_routes_blocked)
+
+
+def evaluate_quiescence(evidence: QuiescenceEvidence) -> Gate:
+    """Drain duration alone never proves that all accepted writes completed."""
+    return _all_required(evidence.effective_fence, evidence.deployments_idle,
+                         evidence.sql_operations_idle, evidence.controller_transition_idle,
+                         evidence.drain_complete, evidence.active_writes_zero,
+                         evidence.other_consumers_idle)
+
+
+def evaluate_backup_coverage(
+    backup: BackupMetadata | None, *, fence_established_at: datetime | None,
+    last_accepted_write_at: datetime | None, no_later_writes: bool | None,
+    recovery_coverage_confirmed: bool | None,
+) -> Coverage:
+    """R1 automatic backup after fence/write; API metadata alone cannot prove restoration."""
+    if backup is None or fence_established_at is None:
+        return Coverage.UNKNOWN
+    if backup.instance is not None and backup.instance != SQL:
+        return Coverage.NOT_COVERED
+    if backup.status is not None and backup.status != "SUCCESSFUL":
+        return Coverage.NOT_COVERED
+    if backup.backup_type is not None and backup.backup_type != "AUTOMATED":
+        return Coverage.NOT_COVERED
+    if backup.error is not None or no_later_writes is False or recovery_coverage_confirmed is False:
+        return Coverage.NOT_COVERED
+    if not backup.backup_id or not backup.instance or not backup.status or not backup.backup_type:
+        return Coverage.UNKNOWN
+    if not backup.start_time or not backup.end_time or not backup.queried_at:
+        return Coverage.UNKNOWN
+    try:
+        fence = as_utc(fence_established_at)
+        start, end, queried = map(as_utc, (backup.start_time, backup.end_time, backup.queried_at))
+        last = as_utc(last_accepted_write_at) if last_accepted_write_at else None
+    except ControlError:
+        return Coverage.UNKNOWN
+    if last is not None and last > fence:
+        return Coverage.NOT_COVERED
+    target = max(fence, last) if last else fence
+    local_start, local_fence = start.astimezone(BOGOTA), fence.astimezone(BOGOTA)
+    window_start = datetime.combine(local_fence.date(), time(18, 0), BOGOTA)
+    window_end = datetime.combine(local_fence.date(), time(22, 0), BOGOTA)
+    deadline = datetime.combine(local_fence.date(), time(23, 0), BOGOTA)
+    if (start <= target or end < start or end > queried or queried - end > BACKUP_AGE_LIMIT
+            or not window_start <= local_start <= window_end
+            or queried.astimezone(BOGOTA) >= deadline):
+        return Coverage.NOT_COVERED
+    if no_later_writes is not True or recovery_coverage_confirmed is not True:
+        return Coverage.UNKNOWN
+    return Coverage.COVERED
+
+
+def evaluate_authenticated_health(evidence: HealthEvidence) -> HealthAssessment:
+    process = _all_required(evidence.revision_ready, evidence.resolved_url)
+    if evidence.idp_status != "READY":
+        app = Gate.UNKNOWN if evidence.idp_status in (None, "NOT_PROVISIONED") else Gate.DENY
+    elif evidence.timed_out or evidence.http_status in (401, 403):
+        app = Gate.DENY
+    else:
+        app = _all_required(evidence.technical_token_valid,
+                            evidence.http_status == 200 if evidence.http_status is not None else None,
+                            evidence.body_status == "UP" if evidence.body_status is not None else None)
+    db = _all_required(evidence.datasource_included,
+                       evidence.datasource_status == "UP" if evidence.datasource_status is not None else None)
+    return HealthAssessment(process, app, db, _combine_gates(process, app, db))
+
+
+def _combine_gates(*gates: Gate | Coverage) -> Gate:
+    if any(gate in (Gate.DENY, Coverage.NOT_COVERED) for gate in gates):
+        return Gate.DENY
+    if any(gate in (Gate.UNKNOWN, Coverage.UNKNOWN) for gate in gates):
+        return Gate.UNKNOWN
+    if all(gate in (Gate.ALLOW, Coverage.COVERED) for gate in gates):
+        return Gate.ALLOW
+    return Gate.UNKNOWN
+
+
+def can_stop_dev(fence: Gate, quiescence: Gate, backup: Coverage) -> Gate:
+    """Only three affirmative A-06 gates make STOP eligible; UNKNOWN blocks it."""
+    if type(fence) is not Gate or type(quiescence) is not Gate or type(backup) is not Coverage:
+        return Gate.UNKNOWN
+    return _combine_gates(fence, quiescence, backup)
+
+
 def verify_stop(e: StopEvidence, now: datetime, stop_deadline: str) -> str:
     now = as_utc(now)
     if not all((e.deployments_idle, e.sql_operations_idle, e.writers_quiesced,
@@ -270,9 +430,10 @@ def plan(op: Operation, state: State | None) -> tuple[str, ...]:
             "CHECK_HEALTH", "MARK_ON")
     if op in (Operation.STOP_DEV, Operation.DRY_RUN_STOP):
         return ("NO_OP_OFF",) if state == State.OFF else (
-            "VALIDATE_ALLOWLIST", "READ_STATE", "FREEZE", "CHECK_DEPLOYMENTS",
-            "CHECK_QUIESCENCE_AND_FENCE", "VERIFY_NEW_RECOVERABLE_BACKUP",
-            "CHECK_NO_LATER_WRITES", "STOP_RUN", "CHECK_TAGS",
+            "VALIDATE_ALLOWLIST", "READ_STATE", "FREEZE_CI_QA",
+            "FENCE_RUN_MANUAL_ZERO", "VERIFY_TAGS_AND_DEPLOYMENTS",
+            "DRAIN_AND_VERIFY_QUIESCENCE", "VERIFY_NEW_RECOVERABLE_BACKUP",
+            "FINAL_REVALIDATION",
             "STOP_SQL_LAST", "MARK_OFF")
     return ("READ_STATE",)
 
@@ -402,14 +563,16 @@ class Controller:
     def stop(self, item: Stored, eid: str, op: Operation, actor: str) -> dict[str, Any]:
         try:
             item = self.transition(item, State.FREEZING, eid, op, actor)
+            item = self.transition(item, State.STOPPING_SERVICES, eid, op, actor)
+            # In the offline port this is the proposed operational write fence.
+            # No cloud adapter is provided, and this call does not prove tags safe.
+            self.runtime.stop_run()
             item = self.transition(item, State.QUIESCING, eid, op, actor)
             first = self.runtime.stop_evidence()
             item = self.transition(item, State.WAITING_BACKUP, eid, op, actor)
             backup_id = verify_stop(first, self.now(), self.schedule["stopDeadline"])
             if self.runtime.stop_evidence() != first:
                 raise ControlError("STOP_EVIDENCE_CHANGED")
-            item = self.transition(item, State.STOPPING_SERVICES, eid, op, actor)
-            self.runtime.stop_run()
             if not self.runtime.stop_evidence().tags_safe:
                 raise ControlError("TAGS_UNSAFE")
             item = self.transition(item, State.STOPPING_SQL, eid, op, actor)
