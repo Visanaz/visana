@@ -1,0 +1,110 @@
+{
+  "main": {
+    "params": ["args"],
+    "steps": [
+      {
+        "init": {
+          "assign": [
+            {"input": "${default(args, {})}"},
+            {"operation": "${map.get(input, \"operation\")}"},
+            {"dryRun": "${default(map.get(input, \"dryRun\"), true)}"},
+            {"projectId": "visana-erp-dev"},
+            {"region": "us-central1"},
+            {"sqlInstance": "visana-db-dev"},
+            {"runService": "visana-api-dev"},
+            {"stateBucket": "visana-erp-dev-schedule-state"},
+            {"stateObject": "cost-dev-01/current.json"}
+          ]
+        }
+      },
+      {
+        "checkOperation": {
+          "switch": [
+            {
+              "condition": "${operation == \"START_DEV\" or operation == \"STOP_DEV\" or operation == \"STATUS\" or operation == \"DRY_RUN_START\" or operation == \"DRY_RUN_STOP\"}",
+              "next": "checkTarget"
+            }
+          ],
+          "next": "rejectOperation"
+        }
+      },
+      {
+        "checkTarget": {
+          "switch": [
+            {
+              "condition": "${(map.get(input, \"projectId\") != null and map.get(input, \"projectId\") != projectId) or (map.get(input, \"region\") != null and map.get(input, \"region\") != region) or (map.get(input, \"sqlInstance\") != null and map.get(input, \"sqlInstance\") != sqlInstance) or (map.get(input, \"runService\") != null and map.get(input, \"runService\") != runService) or (map.get(input, \"stateBucket\") != null and map.get(input, \"stateBucket\") != stateBucket) or (map.get(input, \"stateObject\") != null and map.get(input, \"stateObject\") != stateObject)}",
+              "next": "rejectTarget"
+            }
+          ],
+          "next": "forceDryRun"
+        }
+      },
+      {
+        "forceDryRun": {
+          "switch": [
+            {
+              "condition": "${operation == \"DRY_RUN_START\" or operation == \"DRY_RUN_STOP\"}",
+              "next": "setDryRun"
+            }
+          ],
+          "next": "gateLive"
+        }
+      },
+      {"setDryRun": {"assign": [{"dryRun": true}], "next": "gateLive"}},
+      {
+        "gateLive": {
+          "switch": [
+            {"condition": "${dryRun == false and operation != \"STATUS\"}", "next": "rejectLive"}
+          ],
+          "next": "route"
+        }
+      },
+      {
+        "route": {
+          "switch": [
+            {"condition": "${operation == \"START_DEV\" or operation == \"DRY_RUN_START\"}", "next": "startPlan"},
+            {"condition": "${operation == \"STOP_DEV\" or operation == \"DRY_RUN_STOP\"}", "next": "stopPlan"}
+          ],
+          "next": "status"
+        }
+      },
+      {
+        "startPlan": {
+          "return": {
+            "status": "DRY_RUN",
+            "dryRun": true,
+            "projectId": "visana-erp-dev",
+            "resource": "visana-db-dev/visana-api-dev",
+            "plan": ["VALIDATE_ALLOWLIST", "READ_STATE", "CHECK_SQL", "START_SQL_IF_OFF", "WAIT_SQL_READY", "CHECK_KEYCLOAK_IF_PROVISIONED", "RESTORE_RUN_SCALING", "CHECK_HEALTH", "MARK_ON"],
+            "cloudWrites": 0
+          }
+        }
+      },
+      {
+        "stopPlan": {
+          "return": {
+            "status": "DRY_RUN",
+            "dryRun": true,
+            "projectId": "visana-erp-dev",
+            "resource": "visana-db-dev/visana-api-dev",
+            "plan": ["VALIDATE_ALLOWLIST", "READ_STATE", "FREEZE", "CHECK_DEPLOYMENTS", "CHECK_QUIESCENCE_AND_FENCE", "VERIFY_NEW_RECOVERABLE_BACKUP", "CHECK_NO_LATER_WRITES", "STOP_RUN", "CHECK_TAGS", "STOP_SQL_LAST", "MARK_OFF"],
+            "cloudWrites": 0
+          }
+        }
+      },
+      {
+        "status": {
+          "return": {
+            "status": "NOT_CONNECTED",
+            "dryRun": true,
+            "cloudWrites": 0,
+            "reason": "A-06 fence and health/backup proof adapters are not accredited; no runtime calls"
+          }
+        }
+      },
+      {"rejectOperation": {"raise": "INVALID_OPERATION"}},
+      {"rejectTarget": {"raise": "DEV_ALLOWLIST_MISMATCH"}},
+      {"rejectLive": {"raise": "LIVE_DISABLED_PENDING_A07_GATES"}}
+    ]
+  }
+}
