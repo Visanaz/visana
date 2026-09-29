@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
 import urllib.error
-from cloud_run_dev import run, password_transition_flag
+from cloud_run_dev import run, password_transition_flag, validate_cors, verify_health
 
 
 class DeploymentGuardsTest(unittest.TestCase):
@@ -104,7 +104,10 @@ class DeploymentGuardsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             prepare_existing(bad, self.env)
         for name in ("SPRING_DATASOURCE_URL", "SERVER_PORT", "JAVA_TOOL_OPTIONS", "SPRING_APPLICATION_JSON",
-                     "SPRING_CONFIG_IMPORT", "SPRING_PROFILES_INCLUDE", "MANAGEMENT_HEALTH_DB_ENABLED"):
+                     "SPRING_CONFIG_IMPORT", "SPRING_PROFILES_INCLUDE", "MANAGEMENT_HEALTH_DB_ENABLED",
+                     "MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS", "MANAGEMENT_ENDPOINTS_WEB_BASE_PATH",
+                     "MANAGEMENT_SERVER_ADDRESS", "VISANA_API_CORS_ALLOWED_ORIGINS",
+                     "VISANA_API_CORSALLOWEDORIGINS", "VISANA_API_CORSALLOWEDORIGINS_0_"):
             bad = copy.deepcopy(self.service)
             bad["spec"]["template"]["spec"]["containers"][0]["env"] = [{"name": name, "value": "test-only-value"}]
             with self.assertRaises(ValueError):
@@ -119,7 +122,8 @@ class DeploymentGuardsTest(unittest.TestCase):
                          ("KEYCLOAK_ISSUER_URI", self.env["KEYCLOAK_ISSUER_URI"]),
                          ("DEV_HEALTHCHECK_CLIENT_ID", self.env["HEALTHCHECK_CLIENT_ID"]),
                          ("DEV_HEALTHCHECK_SUBJECT", self.env["HEALTHCHECK_SUBJECT"]),
-                         ("DEV_HEALTHCHECK_AUDIENCE", self.env["HEALTHCHECK_AUDIENCE"]))] +
+                         ("DEV_HEALTHCHECK_AUDIENCE", self.env["HEALTHCHECK_AUDIENCE"]),
+                         ("CORS_ALLOWED_ORIGINS", ""))] +
                          [{"name": "DB_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "rotated-secret", "key": "3"}}}]}]}}
         service = {"status": {"traffic": [{"revisionName": "service-ci-123-1", "percent": 100}]}}
         verify_revision(revision, service, self.env)
@@ -129,6 +133,27 @@ class DeploymentGuardsTest(unittest.TestCase):
             verify_revision(bad, service, self.env)
         with self.assertRaises(ValueError):
             verify_revision(revision, {"status": {"traffic": [{"revisionName": "old", "percent": 100}]}}, self.env)
+
+    def test_cors_requires_approved_https_origins_when_frontend_is_enabled(self):
+        self.assertEqual(validate_cors({}), "")
+        with self.assertRaises(ValueError): validate_cors({"FRONTEND_CLOUD_ENABLED": "true"})
+        origins = "https://frontend.example.invalid,https://qa.example.invalid"
+        self.assertEqual(validate_cors({"CORS_ALLOWED_ORIGINS": origins, "FRONTEND_CLOUD_ENABLED": "true"}), origins)
+        values, _ = prepare_existing(self.service, dict(self.env, CORS_ALLOWED_ORIGINS=origins))
+        self.assertEqual(values["CORS_ALLOWED_ORIGINS"], origins)
+        for origin in ("*", "https://*.example.invalid", "null", "http://localhost:4200", "https://127.0.0.2",
+                       "https://localhost", "https://app.localhost", "https://[::1]", "https://0.0.0.0",
+                       "https://app.example.invalid/", "https://app.example.invalid?x=1",
+                       "https://app.example.invalid#x", "https://user:fake-secret@app.example.invalid",
+                       origins + ",", " https://app.example.invalid", "https://app.example.invalid:invalid"):
+            with self.subTest(origin=origin), self.assertRaisesRegex(ValueError, "values withheld"):
+                validate_cors({"CORS_ALLOWED_ORIGINS": origin})
+
+    def test_health_requires_application_and_visible_database_up(self):
+        verify_health({"status": "UP", "components": {"db": {"status": "UP"}}})
+        for body in ({"status": "UP"}, {"status": "DOWN"},
+                     {"status": "UP", "components": {"db": {"status": "DOWN"}}}):
+            with self.assertRaises(ValueError): verify_health(body)
 
 
 if __name__ == "__main__":

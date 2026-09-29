@@ -49,10 +49,18 @@ class PostgreSql18LifecycleIntegrationTest {
                 assertEquals(8, flyway.info().applied().length);
                 assertEquals(0, flyway.info().pending().length);
                 assertEquals(200, health(first).statusCode());
+                var upComponents = new com.fasterxml.jackson.databind.ObjectMapper().readTree(health(first).body());
+                assertEquals("UP", upComponents.path("components").path("db").path("status").asText());
+                String humanToken = TOKENS.token(java.util.Map.of("sub", "fixture-human", "azp", "fixture-web", "aud", java.util.List.of("business-api")));
+                var humanHealth = healthWithToken(first, humanToken);
+                assertEquals(200, humanHealth.statusCode());
+                assertFalse(humanHealth.body().contains("components"));
                 FAIL_DB.set(true);
                 var down = health(first);
                 assertEquals(503, down.statusCode());
                 assertTrue(down.body().contains("DOWN"));
+                assertEquals("DOWN", new com.fasterxml.jackson.databind.ObjectMapper().readTree(down.body())
+                        .path("components").path("db").path("status").asText());
                 assertFalse(down.body().contains("fixture-password"));
                 assertFalse(down.body().contains("jdbc:"));
                 FAIL_DB.set(false);
@@ -75,12 +83,19 @@ class PostgreSql18LifecycleIntegrationTest {
                 "--spring.datasource.username=" + POSTGRES.getUsername(), "--spring.datasource.password=" + POSTGRES.getPassword(),
                 "--visana.security.health-client-id=" + SignedJwtFixture.CLIENT,
                 "--visana.security.health-subject=" + SignedJwtFixture.SUBJECT,
-                "--visana.security.health-audience=" + SignedJwtFixture.AUDIENCE, "--logging.level.root=ERROR");
+                "--visana.security.health-audience=" + SignedJwtFixture.AUDIENCE,
+                "--management.endpoint.health.show-components=when-authorized",
+                "--management.endpoint.health.roles=SCOPE_visana.health",
+                "--logging.level.root=ERROR");
     }
 
     private HttpResponse<String> health(ServletWebServerApplicationContext context) throws Exception {
+        return healthWithToken(context, TOKENS.token(TOKENS.technicalClaims()));
+    }
+
+    private HttpResponse<String> healthWithToken(ServletWebServerApplicationContext context, String token) throws Exception {
         return HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + context.getWebServer().getPort() + "/actuator/health"))
-                .header("Authorization", "Bearer " + TOKENS.token(TOKENS.technicalClaims())).GET().build(), HttpResponse.BodyHandlers.ofString());
+                .header("Authorization", "Bearer " + token).GET().build(), HttpResponse.BodyHandlers.ofString());
     }
 
     @Configuration

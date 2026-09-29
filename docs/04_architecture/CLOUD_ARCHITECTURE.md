@@ -1,6 +1,18 @@
 # Configuración cloud DEV — VISANA
 
-Corrección del mismo [PR #20](https://github.com/Visanaz/visana/pull/20), Draft. L-01–L-06 fue autorizado y aplicado antes de la preparación actual. La ejecución actual autoriza lectura SQL y preparación/pruebas/publicación de archivos propios; no cambios externos, credenciales, recursos, merge ni despliegue. Guía de uso: [README](../../README.md).
+Corrección del mismo [PR #20](https://github.com/Visanaz/visana/pull/20), Draft. Fase 1 del objetivo maestro: reconciliación, cambios de código/configuración y pruebas/publicación del PR. Guía de uso: [README](../../README.md).
+
+## Reconciliación vigente — 2026-09-29
+
+- L-01–L-06 ya aplicados: runtime SQL Client en proyecto y Secret Accessor limitado al secreto; cuatro variables GitHub cargadas. Se comprobó su presencia por nombre en esta revisión, sin leer secretos. La evaluación IAM sigue limitada por visibilidad de deny.
+- Base `visana_dev`, usuario `visana_app_dev`, Secret Manager `visana-dev-db-password:1` habilitado y PostgreSQL **18.6** constan en evidencia autenticada previa. El ajuste SQL quedó **APPLIED_AND_VERIFIED** el 28 de septiembre: CONNECT y public USAGE/CREATE; sin CREATEDB/CREATEROLE ni membresías administrativas. Las secciones posteriores conservan los snapshots previos, no una lista vigente de operaciones por repetir.
+- Credencial expuesta: incidencia **ABIERTA**; falta identificación/rotación/revocación y correspondencia administrativa del valor del secreto con el usuario. No recuperar valores. `DEV_DB_CREDENTIAL_ROTATION_CONFIRMED` permanece ausente, no true; `origin/dev` aún consume el DB_PASSWORD histórico.
+- Keycloak 26.7.3, realm `visana-erp`, PostgreSQL separado y cliente de health están preparados/probados solo en aislamiento. Pendientes cloud: `KEYCLOAK_ISSUER_URI`, `DEV_HEALTHCHECK_CLIENT_ID`, `DEV_HEALTHCHECK_SUBJECT`, `DEV_HEALTHCHECK_AUDIENCE` y `DEV_HEALTHCHECK_CLIENT_SECRET`; deben derivarse del IdP real autorizado, no de fixtures locales. El cliente frontend está deshabilitado y maintenance pertenece a A-06B.
+- CI se conserva para PR/push. CD exige impacto backend por diff completo y verify exitoso. CORS viaja desde variable GitHub, queda vacío para backend DEV sin frontend y exige origen HTTPS aprobado al activar `DEV_FRONTEND_CLOUD_ENABLED=true`. Health exige aplicación y componente DB UP con detalles ocultos. PORT conserva `${PORT:8084}`; tests de binding verifican 8084/8080 y el servidor de prueba liga un puerto dinámico.
+- COST-DEV vive en PR #21 y A-06B/V9 continúa en rama local dependiente. No se modifican R1 ni recursos cloud, no hay nuevo deploy, merge o Ready. Soporte Spring requiere decisión comercial o migración posterior separada; esta fase no realiza una migración mayor ni declara explotación sin evidencia.
+- Keycloak tendrá costo continuo desde su primer despliegue hasta la futura activación de apagados. Su plantilla min 1/CPU continua no equivale a recurrencia COST-DEV activa.
+
+Las entradas históricas inferiores deben leerse con su fecha. La configuración externa aún no está lista para deploy: código validado no implica `CONFIG_EXTERNAL_READY`, `DEPLOYED`, `HEALTHY` ni `DATABASE_CONNECTED`.
 
 ## Evidencia histórica y captura autenticada del 2026-09-26
 
@@ -274,7 +286,7 @@ La [documentación Cloud SQL](https://docs.cloud.google.com/sql/docs/postgres/us
 
 `build.yml` exige CI antes de CD y omite CD para PR; los guards reales aceptan la URL propuesta y mantienen DB_URL/DB_USER, ADC runtime, puerto, referencia fija y cliente técnico. No hace falta sustituir YAML. Se revisó `deploy-cloudrun@v2`, resuelto a `251330ba9a8a34bfbc1622895f42e1d53fd14522`: merge produce `--update-env-vars` y `--update-secrets`; overwrite produciría `--set-*`. La acción añade los flags extra, incluido `--remove-env-vars=DB_PASSWORD` cuando el guard detecta literal. No se incorpora DB_PASSWORD al archivo de variables. [Código oficial de esa revisión](https://github.com/google-github-actions/deploy-cloudrun/blob/251330ba9a8a34bfbc1622895f42e1d53fd14522/src/main.ts), [semántica gcloud](https://docs.cloud.google.com/sdk/gcloud/reference/run/deploy). La transición está preparada para el futuro despliegue aprobado; no se hizo una revisión manual ni se borraron variables ajenas.
 
-**Estado actual para integración:** L-01–L-06 aplicado y SQL comprobado; ajuste de privilegios aún no aplicado. Cierre administrativo de credencial antigua y correspondencia de nueva credencial pendientes; Keycloak preparado/probado en aislamiento, sin issuer/cliente cloud creado. Correspondencia del desplegador y decisión de soporte Spring siguen pendientes. No solicitar merge mientras esos requisitos sigan abiertos. Integrar en `dev` ejecutará un nuevo CI/CD y puede aplicar Flyway al arrancar. Configurar variables/permisos no demuestra arranque exitoso.
+**Estado de integración reconciliado:** L-01–L-06 y ajuste de privilegios SQL aplicados. Cierre administrativo de credencial antigua, correspondencia de nueva credencial e identidad del desplegador pendientes; Keycloak preparado/probado en aislamiento, sin issuer/cliente cloud creado. Estos externos impiden acreditar deploy. Soporte Spring se decide separadamente según el objetivo maestro. Integrar este cambio en `dev` invocará CI y el gate CD; sus cambios backend habilitan el candidato, cuyo preflight debe bloquear mientras falten externos. El arranque autorizado podrá aplicar V1–V8. Configurar variables/permisos no demuestra arranque exitoso.
 
 ## Validación SQL y preparación Keycloak 2026-09-28
 

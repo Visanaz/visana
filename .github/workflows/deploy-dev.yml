@@ -2,6 +2,10 @@ name: Deploy Backend to Cloud Run (DEV)
 
 on:
   workflow_call:
+    inputs:
+      backend_changed:
+        required: true
+        type: boolean
     secrets:
       GCP_PROJECT_ID:
         required: true
@@ -15,7 +19,7 @@ permissions:
 
 jobs:
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    if: inputs.backend_changed && github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-visana-api-dev
@@ -34,6 +38,8 @@ jobs:
       HEALTHCHECK_CLIENT_ID: ${{ vars.DEV_HEALTHCHECK_CLIENT_ID }}
       HEALTHCHECK_SUBJECT: ${{ vars.DEV_HEALTHCHECK_SUBJECT }}
       HEALTHCHECK_AUDIENCE: ${{ vars.DEV_HEALTHCHECK_AUDIENCE }}
+      CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+      FRONTEND_CLOUD_ENABLED: ${{ vars.DEV_FRONTEND_CLOUD_ENABLED }}
       HEALTHCHECK_CLIENT_SECRET: ${{ secrets.DEV_HEALTHCHECK_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4

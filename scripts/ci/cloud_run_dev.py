@@ -1,5 +1,6 @@
 """DEV deployment guards. Never print credentials, raw service configuration or HTTP bodies."""
 import json
+import ipaddress
 import os
 from pathlib import Path
 import re
@@ -16,7 +17,7 @@ class GuardError(ValueError):
 CONNECTOR_PROPERTIES = {"socketFactory": "com.google.cloud.sql.postgres.SocketFactory",
                         "ipTypes": "PUBLIC", "cloudSqlRefreshStrategy": "lazy", "enableIamAuth": "false"}
 CONFIG_NAMES = ("DB_URL", "DB_USER", "KEYCLOAK_ISSUER_URI", "DEV_HEALTHCHECK_CLIENT_ID",
-                "DEV_HEALTHCHECK_SUBJECT", "DEV_HEALTHCHECK_AUDIENCE")
+                "DEV_HEALTHCHECK_SUBJECT", "DEV_HEALTHCHECK_AUDIENCE", "CORS_ALLOWED_ORIGINS")
 
 
 def validate_jdbc(jdbc, instance):
@@ -53,6 +54,33 @@ def secure_url(value):
     return url
 
 
+def validate_cors(env):
+    enabled = env.get("FRONTEND_CLOUD_ENABLED", "")
+    value = env.get("CORS_ALLOWED_ORIGINS", "")
+    if enabled not in ("", "false", "true"):
+        raise GuardError("Invalid frontend cloud activation flag")
+    if not value:
+        if enabled == "true":
+            raise GuardError("Approved DEV CORS origins required before frontend cloud activation")
+        return ""  # Backend-only DEV denies cross-origin browser access; no localhost fallback.
+    for origin in value.split(","):
+        try:
+            url = urllib.parse.urlsplit(origin)
+            host = (url.hostname or "").lower().rstrip(".")
+            loopback = host == "localhost" or host.endswith(".localhost")
+            try:
+                loopback = loopback or ipaddress.ip_address(host).is_loopback or ipaddress.ip_address(host).is_unspecified
+            except ValueError:
+                pass
+            if (not origin or "*" in origin or any(c.isspace() for c in origin) or url.scheme != "https"
+                    or not host or loopback or url.username or url.password or url.path or "?" in origin or "#" in origin
+                    or url.port == 0):
+                raise ValueError()
+        except ValueError:
+            raise GuardError("Invalid approved DEV CORS origins; values withheld") from None
+    return value
+
+
 def validate_config(env):
     for name in ("PROJECT_ID", "DB_URL", "DB_USER", "KEYCLOAK_ISSUER_URI",
                  "RUNTIME_SERVICE_ACCOUNT", "HEALTHCHECK_CLIENT_ID", "HEALTHCHECK_CLIENT_SECRET"):
@@ -63,6 +91,7 @@ def validate_config(env):
         raise GuardError("Invalid DEV destination")
     validate_jdbc(env["DB_URL"], env["PROJECT_ID"] + ":" + env["REGION"] + ":visana-db-dev")
     secret_reference(env)
+    validate_cors(env)
     for name in ("DB_USER", "HEALTHCHECK_CLIENT_ID", "HEALTHCHECK_SUBJECT", "HEALTHCHECK_AUDIENCE"):
         if any(c.isspace() for c in env[name]) or "${" in env[name] or not env[name]:
             raise GuardError("Invalid external identity/database configuration")
@@ -88,7 +117,9 @@ def prepare_existing(service, env):
     if any(name.startswith("SPRING_DATASOURCE_") or name.startswith("SPRING_FLYWAY_") for name in variables):
         raise GuardError("Existing Spring datasource/Flyway overrides require review before deployment")
     if any(name == "SPRING_APPLICATION_JSON" or name.startswith("SPRING_CONFIG_")
-           or name.startswith("MANAGEMENT_HEALTH_") or name == "MANAGEMENT_SERVER_PORT"
+           or name.startswith(("MANAGEMENT_HEALTH_", "MANAGEMENT_ENDPOINT_HEALTH_",
+                               "MANAGEMENT_ENDPOINTS_WEB_", "MANAGEMENT_SERVER_"))
+           or name.startswith(("VISANA_API_CORS_ALLOWED_ORIGINS", "VISANA_API_CORSALLOWEDORIGINS"))
            or (name.startswith("SPRING_PROFILES_") and name != "SPRING_PROFILES_ACTIVE")
            for name in variables):
         raise GuardError("Existing configuration sources/profiles/health overrides require review")
@@ -101,7 +132,8 @@ def prepare_existing(service, env):
     if container.get("command") or container.get("args"):
         raise GuardError("Existing command/arguments require review before using the image ENTRYPOINT")
     values = {"SPRING_PROFILES_ACTIVE": "dev", "DB_URL": env["DB_URL"],
-              "DB_USER": env["DB_USER"], "KEYCLOAK_ISSUER_URI": env["KEYCLOAK_ISSUER_URI"]}
+              "DB_USER": env["DB_USER"], "KEYCLOAK_ISSUER_URI": env["KEYCLOAK_ISSUER_URI"],
+              "CORS_ALLOWED_ORIGINS": validate_cors(env)}
     values.update({"DEV_HEALTHCHECK_CLIENT_ID": env["HEALTHCHECK_CLIENT_ID"],
                    "DEV_HEALTHCHECK_SUBJECT": env["HEALTHCHECK_SUBJECT"],
                    "DEV_HEALTHCHECK_AUDIENCE": env["HEALTHCHECK_AUDIENCE"]})
@@ -171,7 +203,8 @@ def verify_revision(revision, service, env):
                                 ("DB_USER", env["DB_USER"]), ("KEYCLOAK_ISSUER_URI", env["KEYCLOAK_ISSUER_URI"]),
                                 ("DEV_HEALTHCHECK_CLIENT_ID", env["HEALTHCHECK_CLIENT_ID"]),
                                 ("DEV_HEALTHCHECK_SUBJECT", env["HEALTHCHECK_SUBJECT"]),
-                                ("DEV_HEALTHCHECK_AUDIENCE", env["HEALTHCHECK_AUDIENCE"])):
+                                ("DEV_HEALTHCHECK_AUDIENCE", env["HEALTHCHECK_AUDIENCE"]),
+                                ("CORS_ALLOWED_ORIGINS", validate_cors(env))):
         if values.get(key) != expected_value:
             raise GuardError("Effective revision configuration mismatch: " + key)
     secret = next((item.get("valueFrom", {}).get("secretKeyRef", {}) for item in container.get("env", [])
@@ -186,7 +219,7 @@ def verify_revision(revision, service, env):
 
 def safe_spec(spec, env):
     """Never retain literal passwords, unknown env values or command/argument contents."""
-    expected = {"SPRING_PROFILES_ACTIVE": "dev", **{name: env.get(name) for name in CONFIG_NAMES}}
+    expected = {"SPRING_PROFILES_ACTIVE": "dev", **{name: env.get(name, "") for name in CONFIG_NAMES}}
     expected.update({"DEV_HEALTHCHECK_CLIENT_ID": env.get("HEALTHCHECK_CLIENT_ID"),
                      "DEV_HEALTHCHECK_SUBJECT": env.get("HEALTHCHECK_SUBJECT"),
                      "DEV_HEALTHCHECK_AUDIENCE": env.get("HEALTHCHECK_AUDIENCE")})
@@ -233,6 +266,13 @@ def capture(kind, env):
                        "imageDigest": raw.get("status", {}).get("imageDigest", "")}}
 
 
+def verify_health(response):
+    if response.get("status") != "UP":
+        raise GuardError("Authenticated application health did not report UP")
+    if response.get("components", {}).get("db", {}).get("status") != "UP":
+        raise GuardError("Authenticated datasource health did not report UP")
+
+
 def main():
     env = os.environ
     action = sys.argv[1]
@@ -260,8 +300,7 @@ def main():
         url = required(env, "SERVICE_URL").rstrip("/") + "/actuator/health"
         response = request_json(url, headers={"Accept": "application/json",
                      "Authorization": "Bearer " + application_token(env)})
-        if response.get("status") != "UP":
-            raise GuardError("Authenticated health did not report UP")
+        verify_health(response)
     else:
         raise GuardError("Unknown deployment guard")
     print("DEV guard passed: " + action)

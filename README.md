@@ -10,7 +10,7 @@ Backend existente de VISANA: Java/Spring Boot, persistencia y migraciones, módu
 - **CAPTURA CLOUD:** proyecto `visana-erp-dev`, Cloud Run/Artifact Registry/Cloud SQL consultados. Los logs históricos confirmaron URL DataSource inválida y el desajuste adicional 8084/8080. El servicio tiene ingress All y binding allUsers; no exige actualmente token Google.
 - **CORRECCIÓN VALIDADA:** [CI 36291639215](https://github.com/Visanaz/visana/actions/runs/36291639215), head `fbc570d4a7b91f519326bb44dae363efe640f5fe`: 161 pruebas Java sin fallos/errores/omisiones, diez Python, seis suites PostgreSQL 18.3, mantenimiento JDBC 42.7.13, migraciones, salud y JWT/JWKS aislados. CD omitido. [PR #20](https://github.com/Visanaz/visana/pull/20) sigue Draft; no se desplegó ni verificó conexión Cloud SQL real.
 - **CONFIGURACIÓN DEV:** L-01–L-06 aplicado: SQL Client para runtime, Secret Accessor únicamente en `visana-dev-db-password` y cuatro variables GitHub cargadas. Allow permite las operaciones; evaluación total desconocida por políticas no consultables, sin denegación demostrada. No se repitió el lote.
-- **SQL REAL 2026-09-28:** sesión manual autorizada de `visana_app_dev` en `visana_dev`, PostgreSQL **18.6**, esquema `public`, sin tablas/secuencias/historial Flyway. CONNECT y USAGE/CREATE presentes; `CREATEDB`, `CREATEROLE` y `cloudsqlsuperuser` excesivos. Ajuste preparado y probado solo en base sintética, sin aplicar al servidor real.
+- **SQL REAL 2026-09-28:** base `visana_dev`, usuario `visana_app_dev` y PostgreSQL **18.6** comprobados. El ajuste autorizado quedó aplicado y verificado: CONNECT y public USAGE/CREATE presentes; CREATEDB/CREATEROLE false y sin membresías administrativas. La captura posterior no tenía tablas/secuencias/historial Flyway. Esto no acredita conexión desde Cloud Run ni rotación de credencial.
 - **KEYCLOAK PREPARADO:** imagen 26.7.3 fijada por digest, realm sanitizado `visana-erp`, cliente técnico y PostgreSQL separado. Arranque, persistencia, discovery/JWKS y JWT real contra la seguridad existente del backend pasaron en aislamiento. Recursos e issuer cloud todavía no creados. [Resultados y lote futuro concreto](docs/04_architecture/CLOUD_ARCHITECTURE.md#validación-sql-y-preparación-keycloak-2026-09-28).
 
 ## Stack y requisitos
@@ -53,7 +53,7 @@ El perfil `dev` usa exclusivamente el conector para Cloud SQL; requiere configur
 | `SPRING_PROFILES_ACTIVE` | Workflow fija `dev` | Obligatorio |
 | `PORT` | Cloud Run lo proporciona; fallback local 8084 | No definir en GitHub |
 | `DB_URL` | URL JDBC del conector oficial, sin host ni credenciales; contrato debajo | Cargada por L-03 para `visana_dev`; conexión desde Cloud Run no probada |
-| `DB_USER` | Variable GitHub del mismo nombre; usuario PostgreSQL real | Cargada por L-04: `visana_app_dev`; ajuste de privilegios pendiente |
+| `DB_USER` | Variable GitHub del mismo nombre; usuario PostgreSQL real | Cargada por L-04: `visana_app_dev`; ajuste SQL aplicado y verificado el 28 de septiembre |
 | `DB_PASSWORD` | Credencial PostgreSQL rotada, consumida por Secret Manager en la revisión futura | No usar el literal expuesto ni copiarlo desde GitHub |
 | `KEYCLOAK_ISSUER_URI` | Variable GitHub del mismo nombre; issuer HTTPS externo verificado | Obligatorio, actualmente pendiente |
 | `GCP_PROJECT_ID` | Secret GitHub existente, usado como proyecto explícito | Existente; valor no reproducido |
@@ -65,6 +65,8 @@ El perfil `dev` usa exclusivamente el conector para Cloud SQL; requiere configur
 | `DEV_HEALTHCHECK_AUDIENCE` | Audience dedicada para salud, sin imponerla globalmente a usuarios humanos | Nuevo campo mínimo, pendiente del IdP |
 | `DEV_DB_PASSWORD_SECRET_REF` | Referencia fija `visana-dev-db-password:1`, versión habilitada comprobada | Cargada por L-06; valor no leído ni validado |
 | `DEV_DB_CREDENTIAL_ROTATION_CONFIRMED` | `true` tras cierre documentado por el responsable de rotación/revocación PostgreSQL | Gate administrativo; no prueba revocación ni conexión; no probar la contraseña antigua |
+| `CORS_ALLOWED_ORIGINS` | Variable GitHub con orígenes HTTPS DEV aprobados, separados por coma y sin paths/comodines | Dominio frontend pendiente; vacío deshabilita cross-origin en DEV |
+| `DEV_FRONTEND_CLOUD_ENABLED` | Variable GitHub de activación explícita del frontend cloud, consumida solo por preflight | Vacío/false hasta aprobación; true exige CORS no vacío |
 
 Contrato único de `DB_URL` (plantilla; **no cargar el placeholder**):
 
@@ -85,9 +87,13 @@ La [guía cloud](docs/04_architecture/CLOUD_ARCHITECTURE.md) identifica fuentes 
 1. `build.yml` es la entrada para PR y push de `dev`, `qa` y `main`. Un PR prueba su commit de integración propuesto; no cambia el checkout a `dev`.
 2. Invoca `openapi-contract.yml`, ahora reutilizable: actionlint, pruebas de guards, Maven verify, suites PostgreSQL obligatorias, generación OpenAPI con clases compiladas y comprobación de drift.
 3. Produce el JAR ejecutable, SHA de origen y checksum; comprueba launcher, driver, Connector y Flyway coherente; construye una imagen Linux amd64. El artefacto tiene nombre `backend-<SHA>` y pertenece al mismo run.
-4. Solo un **push integrado en dev**, después de `needs: verify`, invoca el workflow reutilizable `deploy-dev.yml`. PR, ramas de corrección, `qa` y `main` no ejecutan CD DEV. No hay trigger manual ni `pull_request_target`.
+4. Solo un **push integrado en dev**, después de verify y del gate de impacto, invoca `deploy-dev.yml`. El gate compara los árboles completos antes/después del push; incluye borrados, renombres y todos sus commits. Cambios exclusivamente documentales o en `infra/cost-dev-01/**` conservan CI y omiten CD. Rango desconocido/error Git bloquea; el reusable exige un booleano y vuelve a verificar push/dev. PR, ramas de corrección, `qa` y `main` no ejecutan CD DEV.
 5. CD verifica el artefacto, consulta el servicio existente, confirma su cuenta de ejecución, publica y despliega por digest. La concurrencia del servicio evita despliegues simultáneos. Conserva la autenticación existente por clave; no agrega permisos OIDC ni configura WIF.
-6. Comprueba la revisión específica, readiness, digest, perfil/configuración, cuenta de ejecución y tráfico hacia esa revisión. Después exige HTTP 200 y JSON `status=UP` en `/actuator/health` con autenticación de Spring y Cloud Run separadas.
+6. Comprueba la revisión específica, readiness, digest, perfil/configuración, cuenta de ejecución y tráfico hacia esa revisión (`PROCESS_READY`). Después exige HTTP 200, `status=UP` (`APPLICATION_UP`) y `components.db.status=UP` (`DATASOURCE_UP`) en `/actuator/health` con JWT técnico. La captura cloud del backend es pública; una futura privatización requeriría adaptar también la autenticación Google.
+
+Las rutas que afectan artefacto/contrato/CD se enumeran en `scripts/ci/backend_changes.py`: Maven/wrapper, src, Docker, OpenAPI, scripts CI, workflows usados y preparación Keycloak que consume la verificación. El gate no sustituye el bloqueo compartido deploy/STOP de COST-DEV, que sigue pendiente. `concurrency: deploy-visana-api-dev` serializa únicamente deployments GitHub.
+
+En DEV se transporta CORS explícitamente hasta la revisión y se comprueba su valor efectivo. Preflight rechaza localhost, comodines, HTTP, credenciales, paths/query/fragment y overrides de Spring. Sin frontend aprobado la lista queda vacía. El perfil local conserva `http://localhost:4200`; no se inventa un dominio Firebase.
 
 Trabajar en una rama de corrección y abrir PR hacia `dev`; integrar únicamente con aprobación. Las identidades de checks cambian por la llamada reutilizable; el responsable debe verificar cualquier regla de protección configurada antes de integrar. No se modifican protecciones desde esta tarea.
 
@@ -120,7 +126,7 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 
 Los logs de aplicación pueden contener información sensible: revisarlos en un entorno privado y sanitizarlos antes de compartir. Buscar la cadena causal de DataSource/Flyway/OIDC/beans antes de atribuir el error al puerto. No imprimir configuración completa, credenciales ni valores de variables.
 
-Después de integrar: revisar CI/CD del **nuevo SHA**, revisión Ready, digest esperado y salud autenticada. El `UP` agregado usa el indicador DataSource estándar; no demuestra aprobación de reglas, funcionamiento financiero completo ni integridad de todos los datos.
+Después de integrar: revisar CI/CD del **nuevo SHA**, revisión Ready, digest esperado y salud autenticada. En DEV los componentes se muestran solo a `SCOPE_visana.health`, conservando `show-details=never`; se exige db UP además de UP agregado. No demuestra aprobación de reglas, funcionamiento financiero completo ni integridad de todos los datos.
 
 Reversión de aplicación: preparar un revert de los commits propios en otra rama y PR hacia `dev`; revisar compatibilidad de esquema antes de integrar y dejar que el mismo CI/CD publique la aplicación. Una reversión operativa de tráfico a una revisión anterior exige autorización y una revisión previamente validada. **Revertir imagen/código/tráfico no revierte el esquema ni los datos**. No ejecutar down migrations ni `Flyway repair` como parte de esta corrección.
 
@@ -128,7 +134,7 @@ El arranque conserva Flyway y puede aplicar las migraciones existentes al ambien
 
 ## Limitaciones actuales
 
-SQL y esquema ya comprobados: sobran permisos administrativos, con propuesta no aplicada. L-01–L-06 está aplicado; la evaluación total IAM conserva la limitación de deny. Cristian no acreditó usuario/rotación de la credencial expuesta ni correspondencia del payload versión 1 con `visana_app_dev`; la incidencia permanece abierta. No existe todavía issuer/cliente técnico cloud. Desplegador y soporte Spring conservan sus decisiones pendientes. No se crearon recursos ni se desplegó desde esta preparación. Las pruebas aisladas no acreditan conexión backend–Cloud SQL real.
+L-01–L-06 y el ajuste SQL están aplicados según las evidencias del 28 de septiembre; la evaluación total IAM conserva la limitación de deny. Cristian no acreditó usuario/rotación de la credencial expuesta ni correspondencia del payload versión 1 con `visana_app_dev`; la incidencia permanece abierta. No existe todavía issuer/cliente técnico cloud. Desplegador y soporte Spring conservan decisiones pendientes; soporte/migración se tratan fuera de este cierre, sin una migración mayor ni un nuevo bloqueo de DEV basado solo en esa decisión. Las pruebas aisladas no acreditan conexión backend–Cloud SQL real. PR #21/COST-DEV y A-06B/V9 siguen separados; PR #20 solo lleva V1–V8.
 
 ## Preparación de Keycloak DEV
 
