@@ -1,0 +1,160 @@
+name: Keycloak DEV foundation
+
+on:
+  push:
+    branches:
+      - ops/keycloak-dev-foundation
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keycloak-dev-foundation
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.repository == 'Visanaz/visana' && github.ref == 'refs/heads/ops/keycloak-dev-foundation' && github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Verify actor permission and reference PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json, subprocess
+          def api(path):
+              p = subprocess.run(['gh', 'api', path], capture_output=True, text=True)
+              if p.returncode:
+                  raise SystemExit('GITHUB_METADATA_CHECK_FAILED; no cloud authentication attempted')
+              return json.loads(p.stdout)
+          assert api('repos/Visanaz/visana/collaborators/KmDRF/permission')['permission'] in ['write','maintain','admin']
+          pr = api('repos/Visanaz/visana/pulls/20')
+          assert pr['state'] == 'open' and pr['draft'] and not pr['merged']
+          assert pr['base']['ref'] == 'dev'
+          assert pr['head']['sha'] == '259727ae56487ff575a0781c6bac0814ccb64d31'
+          print('ACTOR_AND_PR_PREFLIGHT=PASS')
+
+      - name: Checkout approved source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 259727ae56487ff575a0781c6bac0814ccb64d31
+          path: approved-source
+          persist-credentials: false
+
+      - name: Verify source integrity
+        shell: python
+        run: |
+          import subprocess
+          expected = {
+            'infra/keycloak/Dockerfile': 'f93351e5604205160329935b5bcc0bd03f1652e9',
+            'infra/keycloak/keycloak.conf': '608541333f0af59b0202838535c1c3b71e60e3e0',
+            'infra/keycloak/visana-erp-realm.json': '452a1a2a0529a93b2cc0ce2ce08b739be42866f9',
+          }
+          for path, blob in expected.items():
+              actual = subprocess.check_output(['git','-C','approved-source','hash-object',path],text=True).strip()
+              assert actual == blob, 'SOURCE_INTEGRITY_FAILED'
+          print('SOURCE_INTEGRITY=PASS')
+
+      - name: Authenticate existing deployer
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          project_id: visana-erp-dev
+          create_credentials_file: true
+          export_environment_variables: true
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
+
+      # V2 staged execution: this first push performs metadata reads only.
+      # No build/push or KC-01..04 writes until this inventory is reconciled.
+      - name: Inventory current cloud metadata without payloads
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        shell: python
+        run: |
+          import json, os, re, subprocess, datetime
+          from pathlib import Path
+          project = 'visana-erp-dev'
+          runtime = 'visana-keycloak-dev@visana-erp-dev.iam.gserviceaccount.com'
+          deployer = 'github-actions-dev@visana-erp-dev.iam.gserviceaccount.com'
+          report = {'workflowSha':os.environ['WORKFLOW_SHA'],'sourceSha':'259727ae56487ff575a0781c6bac0814ccb64d31','runId':os.environ['RUN_ID'],'recordedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'method':'AUTOMATED_GITHUB_ACTIONS_EVIDENCE','resources':{},'externalWrites':[],'secretPayloadsRead':False}
+          def query(label, args, empty_is_absent=False):
+              try:
+                  p = subprocess.run(['gcloud',*args,'--project='+project,'--quiet'],capture_output=True,text=True,timeout=90)
+                  if p.returncode:
+                      err = p.stderr
+                      if any(t in err for t in ['SERVICE_DISABLED','has not been used','is disabled']): reason='API_DISABLED'
+                      elif any(t in err for t in ['PERMISSION_DENIED','does not have permission','Permission denied','permission denied','permission to access']): reason='READ_PERMISSION_DENIED'
+                      elif any(t in err for t in ['NOT_FOUND','was not found','does not exist']): reason='NOT_FOUND'
+                      else: reason='COMMAND_FAILED'
+                      item={'state':'NOT_FOUND' if reason=='NOT_FOUND' else 'UNKNOWN','reason':reason,'permissionsMentioned':sorted(set(re.findall(r'\b(?:artifactregistry|cloudsql|iam|secretmanager|run|serviceusage|resourcemanager)\.[A-Za-z]+\.[A-Za-z]+\b',err)))}
+                  else:
+                      data=json.loads(p.stdout or 'null')
+                      item={'state':'NOT_FOUND' if empty_is_absent and not data else 'EXISTS_EXPECTED','metadata':data}
+              except subprocess.TimeoutExpired:
+                  item={'state':'UNKNOWN','reason':'TIMEOUT'}
+              except (ValueError,OSError):
+                  item={'state':'UNKNOWN','reason':'INVALID_RESPONSE'}
+              report['resources'][label]=item
+              return item
+          identity=query('activeIdentity',['auth','list','--filter=status:ACTIVE','--format=json(account)'])
+          if identity.get('metadata') != [{'account':deployer}]:
+              report['result']='IDENTITY_MISMATCH_OR_UNKNOWN'
+          else:
+              report['activeGcpIdentity']=deployer
+              # Exact projection avoids Cloud Run env and all secret payloads.
+              run=query('cloudRunKeycloak',['run','services','describe','visana-keycloak-dev','--region=us-central1','--format=json(metadata.name,status.latestReadyRevisionName)'])
+              if run['state']=='EXISTS_EXPECTED':
+                  run['state']='CONFLICT'
+                  report['result']='UNEXPECTED_KEYCLOAK_CLOUD_RUN_STOP'
+              else:
+                  enabled=query('enabledApis',['services','list','--enabled','--format=json(config.name)'])
+                  if 'metadata' in enabled:
+                      wanted=['artifactregistry.googleapis.com','sqladmin.googleapis.com','iam.googleapis.com','secretmanager.googleapis.com','run.googleapis.com']
+                      names={x['config']['name'] for x in enabled['metadata']}
+                      enabled['metadata']={name:('ENABLED' if name in names else 'DISABLED') for name in wanted}
+                  query('artifactRepository',['artifacts','repositories','describe','visana-repo','--location=us-central1','--format=json(name,format,mode)'])
+                  query('keycloakImage',['artifacts','docker','images','list','us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/visana-keycloak-dev','--include-tags','--format=json(package,version,tags)'],True)
+                  query('sqlInstance',['sql','instances','describe','visana-db-dev','--format=json(name,databaseVersion,state,region)'])
+                  query('keycloakDatabase',['sql','databases','describe','keycloak_dev','--instance=visana-db-dev','--format=json(name,charset,collation)'])
+                  query('keycloakDbUser',['sql','users','list','--instance=visana-db-dev','--filter=name=keycloak_app_dev','--format=json(name,type,host)'],True)
+                  sa=query('runtimeServiceAccount',['iam','service-accounts','describe',runtime,'--format=json(email,disabled,displayName)'])
+                  if 'metadata' in sa and sa['metadata'].get('disabled'): sa['state']='CONFLICT'
+                  if sa['state']=='EXISTS_EXPECTED':
+                      keys=query('runtimeUserManagedKeys',['iam','service-accounts','keys','list','--iam-account='+runtime,'--managed-by=user','--format=json(name,keyType)'])
+                      if keys.get('metadata'): keys['state']='CONFLICT'
+                      query('runtimeIam',['iam','service-accounts','get-iam-policy',runtime,'--format=json(bindings)'])
+                  for name in ['visana-dev-keycloak-db-password','visana-dev-keycloak-bootstrap-password','visana-dev-keycloak-health-client-secret']:
+                      sec=query(name,['secrets','describe',name,'--format=json(name,replication,createTime)'])
+                      if sec['state']=='EXISTS_EXPECTED':
+                          query(name+'Versions',['secrets','versions','list',name,'--format=json(name,state,createTime)'])
+                          query(name+'Iam',['secrets','get-iam-policy',name,'--format=json(bindings)'])
+                  query('artifactRepositoryIam',['artifacts','repositories','get-iam-policy','visana-repo','--location=us-central1','--format=json(bindings)'])
+                  query('projectIam',['projects','get-iam-policy',project,'--format=json(bindings)'])
+                  # Retain only bindings for the two authorized principals.
+                  for label,item in report['resources'].items():
+                      if label.endswith('Iam') and isinstance(item.get('metadata'),dict):
+                          bindings=item['metadata'].get('bindings',[])
+                          item['metadata']={'bindings':[dict(b,members=[m for m in b.get('members',[]) if m in ['serviceAccount:'+runtime,'serviceAccount:'+deployer]]) for b in bindings if any(m in ['serviceAccount:'+runtime,'serviceAccount:'+deployer] for m in b.get('members',[]))]}
+                  report['result']='INVENTORY_REQUIRES_RECONCILIATION' if any(v['state'] in ['UNKNOWN','CONFLICT'] for v in report['resources'].values()) else 'INVENTORY_READ_COMPLETE'
+          Path('kc-preflight.json').write_text(json.dumps(report,indent=2)+'\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as summary:
+              summary.write('# Keycloak foundation: metadata preflight\n\n')
+              summary.write('SOURCE_SHA: '+report['sourceSha']+'\n\n')
+              summary.write('RESULT: '+report['result']+'\n\n')
+              for name,item in report['resources'].items():
+                  summary.write('- '+name+': '+item['state']+' '+item.get('reason','')+'\n')
+          print('SANITIZED_REPORT=kc-preflight.json; RESULT='+report['result'])
+
+      - name: Retain sanitized inventory only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: keycloak-foundation-preflight
+          path: kc-preflight.json
+          if-no-files-found: error
+          retention-days: 7
