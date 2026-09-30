@@ -87,11 +87,12 @@ jobs:
                   p = subprocess.run(['gcloud',*args,'--project='+project,'--quiet'],capture_output=True,text=True,timeout=90)
                   if p.returncode:
                       err = p.stderr
+                      lower = err.lower()
                       if any(t in err for t in ['SERVICE_DISABLED','has not been used','is disabled']): reason='API_DISABLED'
-                      elif any(t in err for t in ['PERMISSION_DENIED','does not have permission','Permission denied','permission denied','permission to access']): reason='READ_PERMISSION_DENIED'
-                      elif any(t in err for t in ['NOT_FOUND','was not found','does not exist']): reason='NOT_FOUND'
+                      elif any(t in lower for t in ['permission_denied','does not have permission','permission denied','permission to access','not authorized','notauthorized','httperror 403','http 403']): reason='READ_PERMISSION_DENIED'
+                      elif any(t in lower for t in ['not_found','was not found','does not exist','cannot find service','could not find service']): reason='NOT_FOUND'
                       else: reason='COMMAND_FAILED'
-                      item={'state':'NOT_FOUND' if reason=='NOT_FOUND' else 'UNKNOWN','reason':reason,'permissionsMentioned':sorted(set(re.findall(r'\b(?:artifactregistry|cloudsql|iam|secretmanager|run|serviceusage|resourcemanager)\.[A-Za-z]+\.[A-Za-z]+\b',err)))}
+                      item={'state':'NOT_FOUND' if reason=='NOT_FOUND' else 'UNKNOWN','reason':reason,'permissionsMentioned':sorted(set(re.findall(r'\b(?:artifactregistry|cloudsql|iam|secretmanager|run|serviceusage|resourcemanager)\.[A-Za-z]+\.(?:get|list|describe|getIamPolicy|setIamPolicy|create|update|delete)\b',err)))}
                   else:
                       data=json.loads(p.stdout or 'null')
                       item={'state':'NOT_FOUND' if empty_is_absent and not data else 'EXISTS_EXPECTED','metadata':data}
@@ -99,6 +100,8 @@ jobs:
                   item={'state':'UNKNOWN','reason':'TIMEOUT'}
               except (ValueError,OSError):
                   item={'state':'UNKNOWN','reason':'INVALID_RESPONSE'}
+              if item.get('reason') == 'API_DISABLED':
+                      item['apiNamesMentioned']=sorted(set(re.findall(r'\b[a-z][a-z0-9-]*\.googleapis\.com\b',err)))
               report['resources'][label]=item
               return item
           identity=query('activeIdentity',['auth','list','--filter=status:ACTIVE','--format=json(account)'])
