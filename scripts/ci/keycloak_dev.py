@@ -95,7 +95,7 @@ def test(output):
         raise ValueError("Use an output directory outside the repository; preserve historical files")
     directory.mkdir(parents=True, exist_ok=True)
     project = "visana-kc-proof-" + uuid.uuid4().hex[:10]
-    test_image = project + ":26.7.3"
+    test_image = project + ":26.7.5"
     environment = dict(os.environ)
     secret_values = [secrets.token_urlsafe(32) for _ in range(4)]
     for name, value in zip(("ADMIN_PASSWORD", "DB_PASSWORD", "BOOTSTRAP_PASSWORD", "CLIENT_SECRET"), secret_values):
@@ -109,7 +109,7 @@ def test(output):
     log_path = directory / "execution.log"
     fixture = directory / "token-fixture.json"
     maven_volume = project + "-maven"
-    report = {"scope": "isolated synthetic Docker only", "keycloak": "26.7.3", "checks": [], "result": "FAIL"}
+    report = {"scope": "isolated synthetic Docker only", "keycloak": "26.7.5", "checks": [], "result": "FAIL"}
 
     def check(label):
         report["checks"].append(label)
