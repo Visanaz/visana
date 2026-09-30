@@ -1,4 +1,4 @@
-name: Keycloak DEV foundation
+name: KC00_DIAGNOSTIC_ONLY
 
 on:
   push:
@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   preflight:
-    if: github.repository == 'Visanaz/visana' && github.ref == 'refs/heads/ops/keycloak-dev-foundation' && github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF'
+    if: github.repository == 'Visanaz/visana' && github.ref == 'refs/heads/ops/keycloak-dev-foundation' && github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF' && false
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - name: Verify actor permission and reference PR
         env:
@@ -57,239 +57,288 @@ jobs:
               assert actual == blob, 'SOURCE_INTEGRITY_FAILED'
           print('SOURCE_INTEGRITY=PASS')
 
-      - name: Authenticate existing deployer
-        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
-        with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
-          project_id: visana-erp-dev
-          create_credentials_file: true
-          export_environment_variables: true
-
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
-
-      # V2: metadata preflight precedes a separately guarded KC-00 build/push.
-      # KC-01..04 are not executed by this workflow.
-      - name: Inventory current cloud metadata without payloads
-        env:
-          WORKFLOW_SHA: ${{ github.sha }}
-          RUN_ID: ${{ github.run_id }}
+      - name: Diagnose base built and source without cloud authentication
         shell: python
         run: |
-          import json, os, re, subprocess, datetime
+          import datetime
+          import hashlib
+          import gzip
+          import json
+          import os
           from pathlib import Path
-          project = 'visana-erp-dev'
-          runtime = 'visana-keycloak-dev@visana-erp-dev.iam.gserviceaccount.com'
-          deployer = 'github-actions-dev@visana-erp-dev.iam.gserviceaccount.com'
-          report = {'workflowSha':os.environ['WORKFLOW_SHA'],'sourceSha':'259727ae56487ff575a0781c6bac0814ccb64d31','runId':os.environ['RUN_ID'],'recordedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'method':'AUTOMATED_GITHUB_ACTIONS_EVIDENCE','resources':{},'externalWrites':[],'secretPayloadsRead':False}
-          def query(label, args, empty_is_absent=False):
+          import re
+          import shutil
+          import subprocess
+          import tarfile
+          import tempfile
+          import urllib.request
+          
+          SOURCE = '259727ae56487ff575a0781c6bac0814ccb64d31'
+          BASE = 'quay.io/keycloak/keycloak:26.7.3@sha256:ff4257d0d64efbe99ed1ddfaf07765cc3c36dc7518bf8324d41961327f441c54'
+          BUILT = 'kc00-diagnostic:' + SOURCE
+          summary = []
+          out = {
+              'SOURCE_SHA': SOURCE, 'BASE_IMAGE_DIGEST': BASE.split('@')[1],
+              'BASE_IMAGE_ID': None, 'BUILT_IMAGE_ID': None, 'PLATFORM': 'linux/amd64',
+              'GITLEAKS_VERSION': '8.30.1',
+              'BASE_SCAN_CLASS': 'NOT_EXECUTED', 'BASE_GITLEAKS_EXIT_CODE': None, 'BASE_FINDING_COUNT': None,
+              'BUILT_SCAN_CLASS': 'NOT_EXECUTED', 'BUILT_GITLEAKS_EXIT_CODE': None, 'BUILT_FINDING_COUNT': None,
+              'SOURCE_SCAN_CLASS': 'NOT_EXECUTED', 'SOURCE_GITLEAKS_EXIT_CODE': None, 'SOURCE_FINDING_COUNT': None,
+              'INHERITED_FINDING_COUNT': None, 'NEW_FINDING_COUNT': None, 'sanitizedFindings': [],
+              'TRIVY_VERSION': '0.74.0', 'TRIVY_EXIT_CODE': None, 'TRIVY_SECRET_COUNT': None,
+              'TRIVY_HIGH_COUNT': None, 'TRIVY_CRITICAL_COUNT': None, 'TRIVY_VULNERABILITIES': [],
+          }
+          stage = 'INITIALIZATION'
+          
+          
+          def record(name, value):
+              # Called exclusively with static labels, counts, booleans, image IDs or digests.
+              summary.append(name + ' = ' + json.dumps(value, ensure_ascii=True))
+          
+          
+          def command(args, timeout=180):
+              result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+              if result.returncode:
+                  raise RuntimeError('CONTROLLED_COMMAND_FAILED')
+              return result.stdout
+          
+          
+          def download_binary(root, name, url, checksum):
+              archive = root / (name + '.tar.gz')
+              urllib.request.urlretrieve(url, archive)
+              assert hashlib.sha256(archive.read_bytes()).hexdigest() == checksum
+              with tarfile.open(archive) as tf:
+                  member = next(x for x in tf.getmembers() if x.name.removeprefix('./') == name and x.isfile())
+                  path = root / name
+                  path.write_bytes(tf.extractfile(member).read())
+                  path.chmod(0o700)
+              return str(path)
+          
+          
+          def export_unique_layers(ref, inspect, root, label):
+              # image.tar is outside the scan directory and is never a scanner input.
+              archive = root / (label + '-transport.tar')
+              destination = root / label
+              destination.mkdir()
+              layers_dir = destination / 'layers'
+              layers_dir.mkdir()
+              command(['docker', 'image', 'save', '--output', str(archive), ref])
+              with tarfile.open(archive) as tf:
+                  manifests = json.load(tf.extractfile('manifest.json'))
+                  assert len(manifests) == 1
+                  layers = manifests[0]['Layers']
+                  digests = inspect['RootFS']['Layers']
+                  assert len(layers) == len(digests) and len(set(digests)) == len(digests)
+                  for member_name, digest in zip(layers, digests):
+                      assert re.fullmatch('sha256:[0-9a-f]{64}', digest)
+                      layer_path = layers_dir / (digest.replace(':', '-') + '.tar')
+                      with tf.extractfile(member_name) as source, layer_path.open('wb') as target:
+                          magic = source.read(2)
+                          source.seek(0)
+                          if magic == b'\x1f\x8b':
+                              with gzip.GzipFile(fileobj=source) as decoded:
+                                  shutil.copyfileobj(decoded, target)
+                          else:
+                              shutil.copyfileobj(source, target)
+                      # Docker save emits uncompressed layer archives; verify actual bytes against DiffID.
+                      h = hashlib.sha256()
+                      with layer_path.open('rb') as stream:
+                          for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                              h.update(chunk)
+                      assert 'sha256:' + h.hexdigest() == digest
+              archive.unlink()
+              (destination / 'config.json').write_text(json.dumps(inspect['Config'], indent=2))
+              history = command(['docker', 'history', '--no-trunc', '--format', '{{json .}}', ref])
+              (destination / 'history.jsonl').write_text(history)
+              return destination
+          
+          
+          def scan_gitleaks(binary, target, label, root, base_digests, report_path='-'):
+              # '-' is the supported Gitleaks stdout reporter; never print captured streams.
+              args = [binary, 'dir', str(target), '--max-archive-depth=3', '--redact=100',
+                      '--report-format=json', '--report-path=' + report_path, '--no-banner', '--log-level=error']
+              timed_out = False
               try:
-                  p = subprocess.run(['gcloud',*args,'--project='+project,'--quiet'],capture_output=True,text=True,timeout=90)
-                  if p.returncode:
-                      err = p.stderr
-                      lower = err.lower()
-                      if any(t in err for t in ['SERVICE_DISABLED','has not been used','is disabled']): reason='API_DISABLED'
-                      elif any(t in lower for t in ['permission_denied','does not have permission','permission denied','permission to access','not authorized','notauthorized','httperror 403','http 403']): reason='READ_PERMISSION_DENIED'
-                      elif any(t in lower for t in ['not_found','was not found','does not exist','cannot find service','could not find service']): reason='NOT_FOUND'
-                      else: reason='COMMAND_FAILED'
-                      item={'state':'NOT_FOUND' if reason=='NOT_FOUND' else 'UNKNOWN','reason':reason,'permissionsMentioned':sorted(set(re.findall(r'\b(?:artifactregistry|cloudsql|iam|secretmanager|run|serviceusage|resourcemanager)\.[A-Za-z]+\.(?:get|list|describe|getIamPolicy|setIamPolicy|create|update|delete)\b',err)))}
-                  else:
-                      data=json.loads(p.stdout or 'null')
-                      item={'state':'NOT_FOUND' if empty_is_absent and not data else 'EXISTS_EXPECTED','metadata':data}
-              except subprocess.TimeoutExpired:
-                  item={'state':'UNKNOWN','reason':'TIMEOUT'}
-              except (ValueError,OSError):
-                  item={'state':'UNKNOWN','reason':'INVALID_RESPONSE'}
-              if item.get('reason') == 'API_DISABLED':
-                      item['apiNamesMentioned']=sorted(set(re.findall(r'\b[a-z][a-z0-9-]*\.googleapis\.com\b',err)))
-              report['resources'][label]=item
-              return item
-          identity=query('activeIdentity',['auth','list','--filter=status:ACTIVE','--format=json(account)'])
-          if identity.get('metadata') != [{'account':deployer}]:
-              report['result']='IDENTITY_MISMATCH_OR_UNKNOWN'
-          else:
-              report['activeGcpIdentity']=deployer
-              # Exact projection avoids Cloud Run env and all secret payloads.
-              run=query('cloudRunKeycloak',['run','services','describe','visana-keycloak-dev','--region=us-central1','--format=json(metadata.name,status.latestReadyRevisionName)'])
-              if run['state']=='EXISTS_EXPECTED':
-                  run['state']='CONFLICT'
-                  report['result']='UNEXPECTED_KEYCLOAK_CLOUD_RUN_STOP'
-              else:
-                  enabled=query('enabledApis',['services','list','--enabled','--format=json(config.name)'])
-                  if 'metadata' in enabled:
-                      wanted=['artifactregistry.googleapis.com','sqladmin.googleapis.com','iam.googleapis.com','secretmanager.googleapis.com','run.googleapis.com']
-                      names={x['config']['name'] for x in enabled['metadata']}
-                      enabled['metadata']={name:('ENABLED' if name in names else 'DISABLED') for name in wanted}
-                  query('artifactRepository',['artifacts','repositories','describe','visana-repo','--location=us-central1','--format=json(name,format,mode)'])
-                  query('keycloakImage',['artifacts','docker','images','list','us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/visana-keycloak-dev','--include-tags','--format=json(package,version,tags)'],True)
-                  query('sqlInstance',['sql','instances','describe','visana-db-dev','--format=json(name,databaseVersion,state,region)'])
-                  query('keycloakDatabase',['sql','databases','describe','keycloak_dev','--instance=visana-db-dev','--format=json(name,charset,collation)'])
-                  query('keycloakDbUser',['sql','users','list','--instance=visana-db-dev','--filter=name=keycloak_app_dev','--format=json(name,type,host)'],True)
-                  sa=query('runtimeServiceAccount',['iam','service-accounts','describe',runtime,'--format=json(email,disabled,displayName)'])
-                  if 'metadata' in sa and sa['metadata'].get('disabled'): sa['state']='CONFLICT'
-                  if sa['state']=='EXISTS_EXPECTED':
-                      keys=query('runtimeUserManagedKeys',['iam','service-accounts','keys','list','--iam-account='+runtime,'--managed-by=user','--format=json(name,keyType)'])
-                      if keys.get('metadata'): keys['state']='CONFLICT'
-                      query('runtimeIam',['iam','service-accounts','get-iam-policy',runtime,'--format=json(bindings)'])
-                  for name in ['visana-dev-keycloak-db-password','visana-dev-keycloak-bootstrap-password','visana-dev-keycloak-health-client-secret']:
-                      sec=query(name,['secrets','describe',name,'--format=json(name,replication,createTime)'])
-                      if sec['state']=='EXISTS_EXPECTED':
-                          query(name+'Versions',['secrets','versions','list',name,'--format=json(name,state,createTime)'])
-                          query(name+'Iam',['secrets','get-iam-policy',name,'--format=json(bindings)'])
-                  query('artifactRepositoryIam',['artifacts','repositories','get-iam-policy','visana-repo','--location=us-central1','--format=json(bindings)'])
-                  query('projectIam',['projects','get-iam-policy',project,'--format=json(bindings)'])
-                  # Retain only bindings for the two authorized principals.
-                  for label,item in report['resources'].items():
-                      if label.endswith('Iam') and isinstance(item.get('metadata'),dict):
-                          bindings=item['metadata'].get('bindings',[])
-                          item['metadata']={'bindings':[dict(b,members=[m for m in b.get('members',[]) if m in ['serviceAccount:'+runtime,'serviceAccount:'+deployer]]) for b in bindings if any(m in ['serviceAccount:'+runtime,'serviceAccount:'+deployer] for m in b.get('members',[]))]}
-                  report['result']='INVENTORY_REQUIRES_RECONCILIATION' if any(v['state'] in ['UNKNOWN','CONFLICT'] for v in report['resources'].values()) else 'INVENTORY_READ_COMPLETE'
-          Path('kc-preflight.json').write_text(json.dumps(report,indent=2)+'\n')
-          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as summary:
-              summary.write('# Keycloak foundation: metadata preflight\n\n')
-              summary.write('SOURCE_SHA: '+report['sourceSha']+'\n\n')
-              summary.write('RESULT: '+report['result']+'\n\n')
-              for name,item in report['resources'].items():
-                  summary.write('- '+name+': '+item['state']+' '+item.get('reason','')+'\n')
-          print('SANITIZED_REPORT=kc-preflight.json; RESULT='+report['result'])
-
-      - name: Build scan and publish only the approved Keycloak image
-        env:
-          WORKFLOW_SHA: ${{ github.sha }}
-        shell: python
-        run: |
-          import json, os, re, subprocess, hashlib, tempfile, tarfile, urllib.request, datetime
-          from pathlib import Path
-          source='259727ae56487ff575a0781c6bac0814ccb64d31'
-          image='us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/visana-keycloak-dev'
-          tagged=image+':'+source
-          base='quay.io/keycloak/keycloak:26.7.3@sha256:ff4257d0d64efbe99ed1ddfaf07765cc3c36dc7518bf8324d41961327f441c54'
-          out={'KC00_SOURCE_SHA':source,'KC00_BUILD_SHA':os.environ['WORKFLOW_SHA'],'KC00_IMAGE':image,'KC00_IMAGE_DIGEST':None,'KC00_PLATFORM':'linux/amd64','KC00_STATUS':'FAIL','cloudRunWrites':False,'registryPushAttempted':False,'rawLogsOrSecretFindingsPublished':False}
-          stage='MINIMUM_INVENTORY'
-          def command(args,timeout=120):
-              p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
-              if p.returncode: raise RuntimeError('COMMAND_FAILED')
-              return p.stdout
-          def save():
-              out['lastStage']=stage
-              out['recordedAtUtc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
-              Path('kc00-result.json').write_text(json.dumps(out,indent=2)+'\n')
-          try:
-              inv=json.loads(Path('kc-preflight.json').read_text())
-              assert inv.get('activeGcpIdentity')=='github-actions-dev@visana-erp-dev.iam.gserviceaccount.com'
-              r=inv['resources']
-              assert r['cloudRunKeycloak']['state']=='NOT_FOUND'
-              assert r['artifactRepository']['state']=='EXISTS_EXPECTED'
-              assert r['keycloakImage']['state']=='NOT_FOUND', 'EXISTING_IMAGE_REQUIRES_RECONCILIATION'
-              stage='TEST_REGISTRY_PERMISSIONS'
-              # Access token remains in memory and is never echoed, persisted or reported.
-              token=command(['gcloud','auth','print-access-token','--quiet']).strip()
-              required=['artifactregistry.repositories.uploadArtifacts','artifactregistry.repositories.downloadArtifacts','artifactregistry.repositories.get']
-              request=urllib.request.Request('https://artifactregistry.googleapis.com/v1/projects/visana-erp-dev/locations/us-central1/repositories/visana-repo:testIamPermissions',data=json.dumps({'permissions':required}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method='POST')
+                  proc = subprocess.run(args, capture_output=True, timeout=900, cwd=root)
+                  code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
+              except subprocess.TimeoutExpired as exc:
+                  code, stdout, stderr = None, exc.stdout or b'', exc.stderr or b''
+                  timed_out = True
+              # Raw JSON exists only in a temporary location and is parsed from memory.
+              raw = root / (label + '-ephemeral-report.json')
+              raw.write_bytes(stdout)
               try:
-                  with urllib.request.urlopen(request,timeout=60) as response: granted=json.load(response).get('permissions',[])
+                  parsed = json.loads(stdout)
+                  valid = isinstance(parsed, list) and all(isinstance(x, dict) and
+                          all(k in x for k in ['RuleID', 'File', 'StartLine', 'EndLine']) for x in parsed)
+              except (ValueError, UnicodeDecodeError):
+                  parsed, valid = [], False
               finally:
-                  del token,request
-              out['registryPermissions']={p:p in granted for p in required}
-              assert all(out['registryPermissions'].values()), 'REGISTRY_PERMISSION_MISSING'
-              stage='SOURCE_AND_CONTEXT'
-              context=Path('approved-source/infra/keycloak').resolve()
-              dockerfile=(context/'Dockerfile').read_text()
-              assert [line.split()[1] for line in dockerfile.splitlines() if line.startswith('FROM ')]==[base,base]
-              assert not any(line.strip().upper().startswith(('ARG ','ADD ')) for line in dockerfile.splitlines())
-              assert (context/'.dockerignore').read_text().splitlines()==['**','!Dockerfile','!keycloak.conf','!visana-erp-realm.json']
-              # Only these approved files can enter the build context; credentials are outside it.
-              out['sourceBaseImage']=base
-              out['buildArgsProvided']=False
-              stage='BUILD'
-              command(['docker','build','--platform=linux/amd64','--pull','--label','org.opencontainers.image.revision='+source,'--label','org.opencontainers.image.source=https://github.com/Visanaz/visana','--tag',tagged,'--file',str(context/'Dockerfile'),str(context)],900)
-              local=json.loads(command(['docker','image','inspect',tagged]))[0]
-              assert local['Os']=='linux' and local['Architecture']=='amd64'
-              assert local['Config']['Labels']['org.opencontainers.image.revision']==source
-              env=local['Config'].get('Env',[])
-              assert not any(re.search(r'(PASSWORD|TOKEN|PRIVATE_KEY|CREDENTIALS|CLIENT_SECRET)',x.split('=',1)[0],re.I) for x in env)
-              out['localImageId']=local['Id'];out['localDiffIds']=local['RootFS']['Layers']
-              stage='SCAN'
-              with tempfile.TemporaryDirectory(prefix='kc00-',dir=os.environ['RUNNER_TEMP']) as temp:
-                  temp=Path(temp); binaries={}
-                  releases=[('gitleaks','https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz','551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'),('trivy','https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz','2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a')]
-                  for name,url,digest in releases:
-                      archive=temp/(name+'.tar.gz')
-                      urllib.request.urlretrieve(url,archive)
-                      assert hashlib.sha256(archive.read_bytes()).hexdigest()==digest
-                      with tarfile.open(archive) as tf:
-                          member=next(m for m in tf.getmembers() if m.name.removeprefix('./')==name and m.isfile())
-                          binary=temp/name;binary.write_bytes(tf.extractfile(member).read());binary.chmod(0o700)
-                          binaries[name]=str(binary)
-                  scan=temp/'all-image-layers';scan.mkdir()
-                  command(['docker','image','save','--output',str(scan/'image.tar'),tagged],180)
-                  # Check every saved layer, including deleted-file history, without unsafe extraction.
-                  with tarfile.open(scan/'image.tar') as saved:
-                      manifest=json.load(saved.extractfile('manifest.json'))
-                      layers=manifest[0]['Layers']
-                      out['layerCountScanned']=len(layers)
-                      for index,layerName in enumerate(layers):
-                          with saved.extractfile(layerName) as stream:
-                              layerPath=scan/('layer-'+str(index)+'.tar')
-                              with layerPath.open('wb') as target:
-                                  import shutil
-                                  shutil.copyfileobj(stream,target)
-                          with tarfile.open(layerPath) as layer:
-                              for member in layer:
-                                  basename=member.name.rsplit('/',1)[-1]
-                                  assert basename!='.env' and not (basename.startswith('gha-creds-') and basename.endswith('.json')), 'SENSITIVE_FILE_IN_IMAGE'
-                  # Gitleaks scans layers plus image config/history; raw output never leaves memory.
-                  (scan/'image-config.json').write_text(json.dumps(local['Config']))
-                  history=command(['docker','history','--no-trunc','--format','{{json .}}',tagged])
-                  (scan/'image-history.jsonl').write_text(history)
-                  leak=subprocess.run([binaries['gitleaks'],'dir',str(scan),'--max-archive-depth=3','--redact=100','--report-format=json','--report-path=/dev/stdout','--no-banner','--log-level=error'],capture_output=True,text=True,timeout=600)
-                  out['gitleaksVersion']='8.30.1';out['allLayersAndConfigScan']='PASS' if leak.returncode==0 else 'FAIL'
-                  assert leak.returncode==0, 'SECRET_SCAN_FAILED_OR_FINDINGS'
-                  trivy=subprocess.run([binaries['trivy'],'image','--scanners','vuln,secret','--severity','HIGH,CRITICAL','--format','json','--quiet','--exit-code','1','--timeout','10m',tagged],capture_output=True,text=True,timeout=660)
-                  out['trivyVersion']='0.74.0'
-                  scanResult=json.loads(trivy.stdout)
-                  vulnerabilities=[v for result in scanResult.get('Results',[]) for v in result.get('Vulnerabilities',[])]
-                  out['highCriticalVulnerabilities']=[{'id':v.get('VulnerabilityID'),'severity':v.get('Severity'),'package':v.get('PkgName'),'installedVersion':v.get('InstalledVersion'),'fixedVersion':v.get('FixedVersion')} for v in vulnerabilities]
-                  out['secretFindingCount']=sum(len(x.get('Secrets',[])) for x in scanResult.get('Results',[]))
-                  assert trivy.returncode==0 and not vulnerabilities and out['secretFindingCount']==0, 'IMAGE_SECURITY_GATE_FAILED'
-              stage='PRE_PUSH_IDEMPOTENCE'
-              existing=json.loads(command(['gcloud','artifacts','docker','images','list',image,'--include-tags','--project=visana-erp-dev','--format=json(package,version,tags)','--quiet']))
-              assert not existing, 'IMAGE_APPEARED_BEFORE_PUSH'
-              # Recheck absence immediately before the only cloud write.
-              absent=subprocess.run(['gcloud','run','services','describe','visana-keycloak-dev','--region=us-central1','--project=visana-erp-dev','--format=json(metadata.name)','--quiet'],capture_output=True,text=True,timeout=90)
-              assert absent.returncode!=0 and any(s in absent.stderr.lower() for s in ['cannot find service','could not find service','not_found','was not found'])
-              stage='PUSH'
-              command(['gcloud','auth','configure-docker','us-central1-docker.pkg.dev','--quiet'])
-              out['registryPushAttempted']=True;save()
-              command(['docker','push',tagged],600)
-              stage='REGISTRY_POSTCHECK'
-              remote=json.loads(command(['gcloud','artifacts','docker','images','describe',tagged,'--project=visana-erp-dev','--format=json','--quiet']))
-              digest=remote.get('image_summary',{}).get('digest')
-              assert digest and re.fullmatch(r'sha256:[0-9a-f]{64}',digest)
-              canonical=image+'@'+digest
-              command(['docker','pull','--platform=linux/amd64',canonical],300)
-              pulled=json.loads(command(['docker','image','inspect',canonical]))[0]
-              assert pulled['Id']==local['Id'] and pulled['RootFS']['Layers']==local['RootFS']['Layers']
-              assert pulled['Os']=='linux' and pulled['Architecture']=='amd64'
-              out['KC00_IMAGE_DIGEST']=digest;out['canonicalImage']=canonical
-              out['KC00_STATUS']='PASS';out['registryPostcheck']='PASS'
+                  raw.unlink(missing_ok=True)
+              record(label + '_GITLEAKS_EXIT_CODE', code)
+              record(label + '_STDOUT_JSON_VALID', valid)
+              record(label + '_STDERR_PRESENT', bool(stderr))
+              record(label + '_STDERR_SHA256', hashlib.sha256(stderr).hexdigest())
+              record(label + '_TIMEOUT', timed_out)
+              # Static error marker from the verified scanner source, not raw stderr/context.
+              record(label + '_REPORT_PATH_NOT_WRITABLE', b'Report path is not writable' in stderr)
+              findings = {}
+              if valid:
+                  for item in parsed:
+                      file_path = str(item['File']).replace('\\', '/')
+                      prefix = str(target).replace('\\', '/').rstrip('/') + '/'
+                      if file_path.startswith(prefix):
+                          relative = file_path[len(prefix):]
+                      elif not file_path.startswith('/') and '..' not in file_path.split('/'):
+                          relative = file_path.removeprefix('./')
+                      else:
+                          relative = 'UNRESOLVED_PATH'
+                      # Preserve public file/layer paths, never Secret/Match/SymlinkFile/context.
+                      normalized = label.lower() + '/' + re.sub(r'[\x00-\x1f\x7f]', '_', relative)
+                      origin = 'UNKNOWN'
+                      layer = re.search(r'(?:^|/)layers/sha256-([0-9a-f]{64})\.tar', relative)
+                      if layer:
+                          origin = 'INHERITED_BASE' if 'sha256:' + layer.group(1) in base_digests else 'VISANA_LAYER'
+                      elif relative == 'config.json':
+                          origin = 'CONFIG'
+                      elif relative == 'history.jsonl':
+                          origin = 'HISTORY'
+                      rule = str(item['RuleID'])
+                      assert re.fullmatch(r'[A-Za-z0-9_.-]+', rule)
+                      start, end = int(item['StartLine']), int(item['EndLine'])
+                      fingerprint = hashlib.sha256((rule + normalized + str(start) + str(end)).encode()).hexdigest()
+                      findings[fingerprint] = {'ruleId': rule, 'path': normalized, 'startLine': start,
+                                               'endLine': end, 'fingerprint': fingerprint, 'origin': origin}
+              classification = ('SCANNER_ERROR' if timed_out else
+                                'FINDINGS' if valid and findings else
+                                'CLEAN' if code == 0 and valid and not findings else 'SCANNER_ERROR')
+              record(label + '_FINDING_COUNT', len(findings) if valid else None)
+              record(label + '_SCAN_CLASS', classification)
+              del stdout, stderr, parsed
+              return classification, code, list(findings.values()), valid
+          
+          
+          def validate_artifact(value):
+              forbidden = {'secret', 'match', 'password', 'token', 'private_key', 'credentials', 'authorization'}
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      assert key == 'TRIVY_SECRET_COUNT' or not any(word in key.lower() for word in forbidden)
+                      validate_artifact(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      validate_artifact(child)
+          
+          
+          try:
+              stage = 'SOURCE'
+              context = Path('approved-source/infra/keycloak').resolve()
+              expected = {'Dockerfile': 'f93351e5604205160329935b5bcc0bd03f1652e9',
+                          'keycloak.conf': '608541333f0af59b0202838535c1c3b71e60e3e0',
+                          'visana-erp-realm.json': '452a1a2a0529a93b2cc0ce2ce08b739be42866f9'}
+              for name, blob in expected.items():
+                  assert command(['git', '-C', 'approved-source', 'hash-object', 'infra/keycloak/' + name]).strip() == blob
+              dockerfile = (context / 'Dockerfile').read_text()
+              assert [x.split()[1] for x in dockerfile.splitlines() if x.startswith('FROM ')] == [BASE, BASE]
+              assert not any(x.strip().upper().startswith(('ARG ', 'ADD ')) for x in dockerfile.splitlines())
+              assert (context / '.dockerignore').read_text().splitlines() == ['**', '!Dockerfile', '!keycloak.conf', '!visana-erp-realm.json']
+              stage = 'BUILD'
+              command(['docker', 'pull', '--platform=linux/amd64', BASE], 600)
+              command(['docker', 'build', '--platform=linux/amd64', '--pull',
+                       '--label', 'org.opencontainers.image.revision=' + SOURCE,
+                       '--label', 'org.opencontainers.image.source=https://github.com/Visanaz/visana',
+                       '--tag', BUILT, '--file', str(context / 'Dockerfile'), str(context)], 900)
+              base = json.loads(command(['docker', 'image', 'inspect', BASE]))[0]
+              built = json.loads(command(['docker', 'image', 'inspect', BUILT]))[0]
+              for image in [base, built]:
+                  assert image['Os'] == 'linux' and image['Architecture'] == 'amd64'
+                  assert not any(re.search(r'(PASSWORD|TOKEN|PRIVATE_KEY|CREDENTIALS|CLIENT_SECRET)', x.split('=', 1)[0], re.I)
+                                 for x in image['Config'].get('Env', []))
+              out['BASE_IMAGE_ID'], out['BUILT_IMAGE_ID'] = base['Id'], built['Id']
+              base_layers = set(base['RootFS']['Layers'])
+              record('BASE_LAYER_DIGESTS', base['RootFS']['Layers'])
+              record('BUILT_LAYER_DIGESTS', built['RootFS']['Layers'])
+              record('INHERITED_LAYERS', [x for x in built['RootFS']['Layers'] if x in base_layers])
+              record('VISANA_ADDED_OR_CHANGED_LAYERS', [x for x in built['RootFS']['Layers'] if x not in base_layers])
+              record('PRIOR_LOCAL_IMAGE_ID_MATCH', built['Id'] == 'sha256:6b019560bc9b3fb3dde7824fe22ea82d7ba57fd498311c41e150f76c40927b34')
+              with tempfile.TemporaryDirectory(prefix='kc00d-', dir=os.environ['RUNNER_TEMP']) as temp:
+                  root = Path(temp)
+                  stage = 'VERIFIED_SCANNERS'
+                  gl = download_binary(root, 'gitleaks', 'https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz', '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb')
+                  trivy = download_binary(root, 'trivy', 'https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz', '2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a')
+                  # Nonsecret empty-directory control isolates the former reporter path behavior.
+                  control = root / 'empty-control'
+                  control.mkdir()
+                  stage = 'LEGACY_REPORTER_CONTROL'
+                  scan_gitleaks(gl, control, 'LEGACY_REPORTER_CONTROL', root, base_layers, '/dev/stdout')
+                  stage = 'UNIQUE_LAYER_EXPORT'
+                  base_dir = export_unique_layers(BASE, base, root, 'base')
+                  built_dir = export_unique_layers(BUILT, built, root, 'built')
+                  source_dir = root / 'source'
+                  source_dir.mkdir()
+                  for name in expected:
+                      shutil.copyfile(context / name, source_dir / name)
+                  all_findings = {}
+                  for label, target in [('BASE', base_dir), ('BUILT', built_dir), ('SOURCE', source_dir)]:
+                      stage = 'GITLEAKS_' + label
+                      cls, exit_code, findings, valid = scan_gitleaks(gl, target, label, root, base_layers)
+                      out[label + '_SCAN_CLASS'] = cls
+                      out[label + '_GITLEAKS_EXIT_CODE'] = exit_code
+                      out[label + '_FINDING_COUNT'] = len(findings) if valid else None
+                      all_findings[label] = findings
+                      out['sanitizedFindings'].extend(findings)
+                  def equivalent(f):
+                      # Metadata equivalence only: no secret values or hashes enter this key.
+                      return (f['ruleId'], f['path'].split('/', 1)[1], f['startLine'], f['endLine'])
+                  if out['BASE_SCAN_CLASS'] != 'SCANNER_ERROR' and out['BUILT_SCAN_CLASS'] != 'SCANNER_ERROR':
+                      base_keys = {equivalent(x) for x in all_findings['BASE']}
+                      built_keys = {equivalent(x) for x in all_findings['BUILT']}
+                      out['INHERITED_FINDING_COUNT'] = len(base_keys & built_keys)
+                      out['NEW_FINDING_COUNT'] = len(built_keys - base_keys)
+                  stage = 'TRIVY'
+                  try:
+                      tr = subprocess.run([trivy, 'image', '--scanners', 'vuln,secret', '--severity', 'HIGH,CRITICAL',
+                                           '--format', 'json', '--quiet', '--exit-code', '1', '--timeout', '10m', BUILT],
+                                          capture_output=True, timeout=660)
+                      out['TRIVY_EXIT_CODE'] = tr.returncode
+                      record('TRIVY_STDERR_PRESENT', bool(tr.stderr))
+                      record('TRIVY_STDERR_SHA256', hashlib.sha256(tr.stderr).hexdigest())
+                      tr_data = json.loads(tr.stdout)
+                      assert isinstance(tr_data, dict) and 'Results' in tr_data
+                      record('TRIVY_STDOUT_JSON_VALID', True)
+                      out['TRIVY_SECRET_COUNT'] = sum(len(x.get('Secrets', [])) for x in tr_data['Results'])
+                      vulnerabilities = [v for result in tr_data['Results'] for v in result.get('Vulnerabilities', [])]
+                      out['TRIVY_HIGH_COUNT'] = sum(v.get('Severity') == 'HIGH' for v in vulnerabilities)
+                      out['TRIVY_CRITICAL_COUNT'] = sum(v.get('Severity') == 'CRITICAL' for v in vulnerabilities)
+                      out['TRIVY_VULNERABILITIES'] = [{'id': v.get('VulnerabilityID'), 'package': v.get('PkgName'),
+                                                    'installedVersion': v.get('InstalledVersion'), 'fixedVersion': v.get('FixedVersion'),
+                                                    'severity': v.get('Severity')} for v in vulnerabilities]
+                      del tr_data, tr
+                  except (subprocess.TimeoutExpired, ValueError, AssertionError):
+                      record('TRIVY_CLASS', 'SCANNER_ERROR')
+                  stage = 'SANITIZED_REPORT'
           except Exception as error:
-              out['errorType']=type(error).__name__
-              # Exception text, command stderr, ENV and scanner raw output are deliberately not logged.
-              out['KC00_STATUS']='FAIL'
+              record('DIAGNOSTIC_ERROR_STAGE', stage)
+              record('DIAGNOSTIC_ERROR_TYPE', type(error).__name__)
           finally:
-              save()
-              print('KC00_STATUS='+out['KC00_STATUS']+'; LAST_STAGE='+stage)
-          if out['KC00_STATUS']!='PASS': raise SystemExit(1)
+              record('LAST_STAGE', stage)
+              record('CLOUD_AUTHENTICATION', False)
+              record('REGISTRY_PUSH_ATTEMPTED', False)
+              validate_artifact(out)
+              Path('kc00-scan-diagnostic.json').write_text(json.dumps(out, indent=2) + '\n')
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as target:
+                  target.write('# KC00_DIAGNOSTIC_ONLY\n\n```text\n' + '\n'.join(summary) + '\n```\n')
+              for line in summary:
+                  print(line)
+              print('SANITIZED_ARTIFACT_VALIDATED=kc00-scan-diagnostic.json')
+          
+          if any(out[x + '_SCAN_CLASS'] in ['SCANNER_ERROR', 'NOT_EXECUTED'] for x in ['BASE', 'BUILT', 'SOURCE']) or out['TRIVY_SECRET_COUNT'] is None:
+              raise SystemExit(1)
 
-
-      - name: Retain sanitized inventory only
+      - name: Retain only the validated diagnostic JSON
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: keycloak-foundation-evidence
-          path: |
-            kc-preflight.json
-            kc00-result.json
+          name: kc00-scan-diagnostic
+          path: kc00-scan-diagnostic.json
           if-no-files-found: error
           retention-days: 7
