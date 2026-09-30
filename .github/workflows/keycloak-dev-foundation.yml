@@ -1,4 +1,4 @@
-name: KC00E_FINALIZE_ASSESSMENT_ONLY
+name: KC00F_CANDIDATE_ASSESSMENT_ONLY
 
 on:
   push:
@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
   group: keycloak-dev-foundation
@@ -15,9 +14,9 @@ concurrency:
 
 jobs:
   preflight:
-    if: github.repository == 'Visanaz/visana' && github.ref == 'refs/heads/ops/keycloak-dev-foundation' && github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF'
+    if: github.repository == 'Visanaz/visana' && github.ref == 'refs/heads/ops/keycloak-dev-foundation' && github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF' && false
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 60
     steps:
       - name: Verify actor permission and reference PR
         env:
@@ -37,42 +36,497 @@ jobs:
           assert pr['head']['sha'] == '259727ae56487ff575a0781c6bac0814ccb64d31'
           print('ACTOR_AND_PR_PREFLIGHT=PASS')
 
-      - name: Reconcile official evidence into existing sanitized assessment
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Checkout approved source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 259727ae56487ff575a0781c6bac0814ccb64d31
+          path: approved-source
+          persist-credentials: false
+
+      - name: Verify source integrity
         shell: python
         run: |
-          import hashlib, io, json, os, subprocess, zipfile
+          import subprocess
+          expected = {
+            'infra/keycloak/Dockerfile': 'f93351e5604205160329935b5bcc0bd03f1652e9',
+            'infra/keycloak/keycloak.conf': '608541333f0af59b0202838535c1c3b71e60e3e0',
+            'infra/keycloak/visana-erp-realm.json': '452a1a2a0529a93b2cc0ce2ce08b739be42866f9',
+          }
+          for path, blob in expected.items():
+              actual = subprocess.check_output(['git','-C','approved-source','hash-object',path],text=True).strip()
+              assert actual == blob, 'SOURCE_INTEGRITY_FAILED'
+          print('SOURCE_INTEGRITY=PASS')
+
+      - name: Assess candidate base without cloud authentication or publication
+        shell: python
+        run: |
+          import datetime
+          import hashlib
+          import gzip
+          import json
+          import os
           from pathlib import Path
-          p = subprocess.run(['gh','api','repos/Visanaz/visana/actions/artifacts/11117918553/zip'], capture_output=True)
-          assert p.returncode == 0, 'ARTIFACT_DOWNLOAD_FAILED'
-          with zipfile.ZipFile(io.BytesIO(p.stdout)) as archive:
-              assert archive.namelist() == ['kc00e-keycloak-2674-assessment.json']
-              raw = archive.read(archive.namelist()[0])
-          assert hashlib.sha256(raw).hexdigest() == '661dee5b2380c7dc2f0001483c37ccd736cc677b8b901c340337a8b8619e8ca5'
-          data = json.loads(raw)
-          updates = json.loads('{"OFFICIAL_RELEASE_REVIEW": {"latestObservedRelease": "26.7.5", "publishedAtUtc": "2026-09-30T17:44:19Z", "observedAt": "2026-09-30", "sources": ["https://github.com/keycloak/keycloak/releases/tag/26.7.5", "https://github.com/keycloak/keycloak/issues/52888"], "correction": "The downloads page still displayed 26.7.4; live official GitHub release metadata establishes 26.7.5. Supersedes initial runner release note only; scan and compatibility measurements unchanged.", "documentedFixInNewRelease": ["CVE-2026-84939"], "safeOfficialPathForRemainingCriticals": "NOT_VALIDATED", "nextCandidate": "26.7.5; requires separate authorization and complete image assessment", "newReleaseBuiltOrScanned": false, "rebuiltImage": "26.7.4 resolved to the same Quay digest before and after the run; no alternative digest or safe rebuilt image evidenced. Historical tag changes not established.", "officialMitigationApplied": false, "officialMitigationReview": "No verified Keycloak 26.7.4 mitigation closing all remaining CRITICAL findings. Dependency-level fixes are recorded by Trivy; no package surgery performed."}, "ASSESSMENT_PROVENANCE": {"measurementRun": 36759086953, "measurementWorkflowSha": "8530a091e92152884f5aa1ab35598bc0f61c824a", "measurementArtifactId": 11117918553, "measurementJsonSha256": "661dee5b2380c7dc2f0001483c37ccd736cc677b8b901c340337a8b8619e8ca5", "baselineRun": 36754205026, "finalization": "Reconcile official release evidence and direct crypto dependency classification only. No repeated scans, builds or tests."}, "ASSESSMENT_LIMITS": ["Gitleaks base and built returned valid finding JSON and nonempty error-level stderr; only metadata retained. No claim of exhaustive error-free scanner coverage.", "Source Gitleaks scope is the three approved image input files, same as KC-00D; not a full repository history scan.", "Comparison uses historical 26.7.3 baseline and present 26.7.4 results; no same-time rescan of 26.7.3.", "Vulnerability presence and dependency classification do not prove exploitability.", "Isolated compatibility evidence does not establish cloud operation or close the IDP gate."], "GITLEAKS_FINDING_CLASSIFICATION": "KNOWN_INHERITED_BASE_FINDING", "GITLEAKS_BASELINE_CORRELATION": "Same rule, internal java.security path and line 1035 as 26.7.3; layer DiffID differs. Metadata correlation only; no comparison of secret values.", "PROPOSED_DOCKERFILE_CHANGE_STATUS": "NOT_RECOMMENDED; proposal only, not applied", "DECISION_REASON": "Build and compatibility pass, but none of the eight baseline CVEs is removed: HIGH 9 and CRITICAL 4 unchanged. Required material security improvement absent.", "CRITICAL_CLASSIFICATIONS": [{"CVE": "CVE-2026-75595", "package": "io.netty:netty-handler", "installedVersion": "4.1.136.Final", "fixedVersion": "4.2.17.Final, 4.1.137.Final", "severity": "CRITICAL", "classification": "TRANSITIVE_RUNTIME", "classificationEvidence": ["https://github.com/keycloak/keycloak/blob/26.7.4/quarkus/runtime/pom.xml", "https://github.com/netty/netty/security/advisories/GHSA-c4c3-7fpv-j4q5"], "basis": "Bundled networking runtime through Quarkus/Vert.x; affected TLS SNI execution path not demonstrated by presence.", "severityNote": "Trivy classifies CRITICAL; Netty advisory labels HIGH. Preserve scanner severity for the established gate."}, {"CVE": "CVE-2026-8763", "package": "org.bouncycastle:bcprov-jdk18on", "installedVersion": "1.84", "fixedVersion": "1.85", "severity": "CRITICAL", "classification": "DIRECT_KEYCLOAK_RUNTIME", "classificationEvidence": ["https://github.com/keycloak/keycloak/blob/26.7.4/crypto/default/pom.xml", "https://github.com/keycloak/keycloak/blob/26.7.4/crypto/default/src/main/java/org/keycloak/crypto/def/DefaultCryptoProvider.java"], "basis": "Default crypto module declares bcprov and directly instantiates BouncyCastleProvider; initial generic transitive label refined from official source."}, {"CVE": "CVE-2026-8763", "package": "org.bouncycastle:bcprov-jdk18on", "installedVersion": "1.84", "fixedVersion": "1.85", "severity": "CRITICAL", "classification": "DIRECT_KEYCLOAK_RUNTIME", "classificationEvidence": ["https://github.com/keycloak/keycloak/blob/26.7.4/crypto/default/pom.xml", "https://github.com/keycloak/keycloak/blob/26.7.4/crypto/default/src/main/java/org/keycloak/crypto/def/DefaultCryptoProvider.java"], "basis": "Default crypto module declares bcprov and directly instantiates BouncyCastleProvider; initial generic transitive label refined from official source."}, {"CVE": "CVE-2026-84939", "package": "org.freemarker:freemarker", "installedVersion": "2.3.32", "fixedVersion": "2.3.35", "severity": "CRITICAL", "classification": "DIRECT_KEYCLOAK_RUNTIME", "classificationEvidence": ["https://github.com/keycloak/keycloak/blob/26.7.4/services/src/main/java/org/keycloak/theme/freemarker/DefaultFreeMarkerProvider.java"], "basis": "Default theme provider directly loads and processes FreeMarker templates."}]}')
-          before = dict(data)
-          data.update(updates)
-          assert all(data[k] == v for k,v in before.items() if k not in updates)
-          def validate(value):
+          import re
+          import shutil
+          import subprocess
+          import tarfile
+          import tempfile
+          import urllib.request
+          
+          SOURCE = '259727ae56487ff575a0781c6bac0814ccb64d31'
+          BASE = 'quay.io/keycloak/keycloak:26.7.3@sha256:ff4257d0d64efbe99ed1ddfaf07765cc3c36dc7518bf8324d41961327f441c54'
+          BUILT = 'kc00-diagnostic:' + SOURCE
+          summary = []
+          out = {
+              'SOURCE_SHA': SOURCE, 'BASE_IMAGE_DIGEST': BASE.split('@')[1],
+              'BASE_IMAGE_ID': None, 'BUILT_IMAGE_ID': None, 'PLATFORM': 'linux/amd64',
+              'GITLEAKS_VERSION': '8.30.1',
+              'BASE_SCAN_CLASS': 'NOT_EXECUTED', 'BASE_GITLEAKS_EXIT_CODE': None, 'BASE_FINDING_COUNT': None,
+              'BUILT_SCAN_CLASS': 'NOT_EXECUTED', 'BUILT_GITLEAKS_EXIT_CODE': None, 'BUILT_FINDING_COUNT': None,
+              'SOURCE_SCAN_CLASS': 'NOT_EXECUTED', 'SOURCE_GITLEAKS_EXIT_CODE': None, 'SOURCE_FINDING_COUNT': None,
+              'INHERITED_FINDING_COUNT': None, 'NEW_FINDING_COUNT': None, 'sanitizedFindings': [],
+              'TRIVY_VERSION': '0.74.0', 'TRIVY_EXIT_CODE': None, 'TRIVY_SECRET_COUNT': None,
+              'TRIVY_HIGH_COUNT': None, 'TRIVY_CRITICAL_COUNT': None, 'TRIVY_VULNERABILITIES': [],
+          }
+          stage = 'INITIALIZATION'
+          
+          
+          def record(name, value):
+              # Called exclusively with static labels, counts, booleans, image IDs or digests.
+              summary.append(name + ' = ' + json.dumps(value, ensure_ascii=True))
+          
+          
+          def command(args, timeout=180):
+              result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+              if result.returncode:
+                  raise RuntimeError('CONTROLLED_COMMAND_FAILED')
+              return result.stdout
+          
+          
+          def download_binary(root, name, url, checksum):
+              archive = root / (name + '.tar.gz')
+              urllib.request.urlretrieve(url, archive)
+              assert hashlib.sha256(archive.read_bytes()).hexdigest() == checksum
+              with tarfile.open(archive) as tf:
+                  member = next(x for x in tf.getmembers() if x.name.removeprefix('./') == name and x.isfile())
+                  path = root / name
+                  path.write_bytes(tf.extractfile(member).read())
+                  path.chmod(0o700)
+              return str(path)
+          
+          
+          def export_unique_layers(ref, inspect, root, label):
+              # image.tar is outside the scan directory and is never a scanner input.
+              archive = root / (label + '-transport.tar')
+              destination = root / label
+              destination.mkdir()
+              layers_dir = destination / 'layers'
+              layers_dir.mkdir()
+              command(['docker', 'image', 'save', '--output', str(archive), ref])
+              with tarfile.open(archive) as tf:
+                  manifests = json.load(tf.extractfile('manifest.json'))
+                  assert len(manifests) == 1
+                  layers = manifests[0]['Layers']
+                  digests = inspect['RootFS']['Layers']
+                  assert len(layers) == len(digests) and len(set(digests)) == len(digests)
+                  for member_name, digest in zip(layers, digests):
+                      assert re.fullmatch('sha256:[0-9a-f]{64}', digest)
+                      layer_path = layers_dir / (digest.replace(':', '-') + '.tar')
+                      with tf.extractfile(member_name) as source, layer_path.open('wb') as target:
+                          magic = source.read(2)
+                          source.seek(0)
+                          if magic == b'\x1f\x8b':
+                              with gzip.GzipFile(fileobj=source) as decoded:
+                                  shutil.copyfileobj(decoded, target)
+                          else:
+                              shutil.copyfileobj(source, target)
+                      # Docker save emits uncompressed layer archives; verify actual bytes against DiffID.
+                      h = hashlib.sha256()
+                      with layer_path.open('rb') as stream:
+                          for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                              h.update(chunk)
+                      assert 'sha256:' + h.hexdigest() == digest
+              archive.unlink()
+              (destination / 'config.json').write_text(json.dumps(inspect['Config'], indent=2))
+              history = command(['docker', 'history', '--no-trunc', '--format', '{{json .}}', ref])
+              (destination / 'history.jsonl').write_text(history)
+              return destination
+          
+          
+          def scan_gitleaks(binary, target, label, root, base_digests, report_path='-'):
+              # '-' is the supported Gitleaks stdout reporter; never print captured streams.
+              args = [binary, 'dir', str(target), '--max-archive-depth=3', '--redact=100',
+                      '--report-format=json', '--report-path=' + report_path, '--no-banner', '--log-level=error']
+              timed_out = False
+              try:
+                  proc = subprocess.run(args, capture_output=True, timeout=900, cwd=root)
+                  code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
+              except subprocess.TimeoutExpired as exc:
+                  code, stdout, stderr = None, exc.stdout or b'', exc.stderr or b''
+                  timed_out = True
+              # Raw JSON exists only in a temporary location and is parsed from memory.
+              raw = root / (label + '-ephemeral-report.json')
+              raw.write_bytes(stdout)
+              try:
+                  parsed = json.loads(stdout)
+                  valid = isinstance(parsed, list) and all(isinstance(x, dict) and
+                          all(k in x for k in ['RuleID', 'File', 'StartLine', 'EndLine']) for x in parsed)
+              except (ValueError, UnicodeDecodeError):
+                  parsed, valid = [], False
+              finally:
+                  raw.unlink(missing_ok=True)
+              record(label + '_GITLEAKS_EXIT_CODE', code)
+              record(label + '_STDOUT_JSON_VALID', valid)
+              record(label + '_STDERR_PRESENT', bool(stderr))
+              record(label + '_STDERR_SHA256', hashlib.sha256(stderr).hexdigest())
+              record(label + '_TIMEOUT', timed_out)
+              # Static error marker from the verified scanner source, not raw stderr/context.
+              record(label + '_REPORT_PATH_NOT_WRITABLE', b'Report path is not writable' in stderr)
+              findings = {}
+              if valid:
+                  for item in parsed:
+                      file_path = str(item['File']).replace('\\', '/')
+                      prefix = str(target).replace('\\', '/').rstrip('/') + '/'
+                      if file_path.startswith(prefix):
+                          relative = file_path[len(prefix):]
+                      elif not file_path.startswith('/') and '..' not in file_path.split('/'):
+                          relative = file_path.removeprefix('./')
+                      else:
+                          relative = 'UNRESOLVED_PATH'
+                      # Preserve public file/layer paths, never Secret/Match/SymlinkFile/context.
+                      normalized = label.lower() + '/' + re.sub(r'[\x00-\x1f\x7f]', '_', relative)
+                      origin = 'UNKNOWN'
+                      layer = re.search(r'(?:^|/)layers/sha256-([0-9a-f]{64})\.tar', relative)
+                      if layer:
+                          origin = 'INHERITED_BASE' if 'sha256:' + layer.group(1) in base_digests else 'VISANA_LAYER'
+                      elif relative == 'config.json':
+                          origin = 'CONFIG'
+                      elif relative == 'history.jsonl':
+                          origin = 'HISTORY'
+                      rule = str(item['RuleID'])
+                      assert re.fullmatch(r'[A-Za-z0-9_.-]+', rule)
+                      start, end = int(item['StartLine']), int(item['EndLine'])
+                      fingerprint = hashlib.sha256((rule + normalized + str(start) + str(end)).encode()).hexdigest()
+                      findings[fingerprint] = {'ruleId': rule, 'path': normalized, 'startLine': start,
+                                               'endLine': end, 'fingerprint': fingerprint, 'origin': origin}
+              classification = ('SCANNER_ERROR' if timed_out else
+                                'FINDINGS' if valid and findings else
+                                'CLEAN' if code == 0 and valid and not findings else 'SCANNER_ERROR')
+              record(label + '_FINDING_COUNT', len(findings) if valid else None)
+              record(label + '_SCAN_CLASS', classification)
+              del stdout, stderr, parsed
+              return classification, code, list(findings.values()), valid
+          
+          
+          def validate_artifact(value):
+              forbidden = {'secret', 'match', 'password', 'token', 'private_key', 'credentials', 'authorization'}
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      assert key == 'TRIVY_SECRET_COUNT' or not any(word in key.lower() for word in forbidden)
+                      validate_artifact(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      validate_artifact(child)
+          
+          
+          import contextlib
+          import importlib.util
+          import io
+          import types
+          
+          CURRENT = BASE
+          TAG = 'quay.io/keycloak/keycloak:26.7.5'
+          BUILT = 'kc00f-candidate:' + SOURCE
+          BASELINE = {'CVE-2026-75595', 'CVE-2026-8763', 'CVE-2026-13506', 'CVE-2026-84939',
+                      'CVE-2026-68497', 'CVE-2025-59250', 'CVE-2026-86145', 'CVE-2026-89161'}
+          out = {
+              'KC00F_STATUS': 'INCOMPLETE', 'SOURCE_SHA': SOURCE,
+              'CURRENT_BASE': CURRENT, 'CANDIDATE_BASE': TAG, 'CANDIDATE_VERSION': '26.7.5',
+              'CANDIDATE_DIGEST': None, 'CANDIDATE_DIGEST_SOURCE': 'QUAY_REGISTRY',
+              'CANDIDATE_BUILD_STATUS': 'NOT_EXECUTED', 'CANDIDATE_PLATFORM': 'linux/amd64',
+              'CURRENT_CVES': sorted(BASELINE), 'CURRENT_TRIVY_COUNTS': {'HIGH': 9, 'CRITICAL': 4, 'SECRET_COUNT': 0},
+              'BASELINE_PROVENANCE': {'version': '26.7.4', 'measurementRun': 36759086953,
+                  'finalizedJsonSha256': '9e517df70ea80622673cbfd142b24ae4700bc34e8f97710423b4f5f3073abb3b'},
+              'GITLEAKS_VERSION': '8.30.1', 'TRIVY_VERSION': '0.74.0',
+              'GITLEAKS_COUNTS': {}, 'GITLEAKS_SCANS': {}, 'sanitizedFindings': [],
+              'TRIVY_COUNTS': {}, 'CANDIDATE_CVES': {},
+              'CANDIDATE_CONFIG_VALIDATE': 'NOT_EXECUTED',
+              'CANDIDATE_ISOLATED_KEYCLOAK_TEST': 'NOT_EXECUTED',
+              'CANDIDATE_BACKEND_HEALTH_CONTRACT': 'NOT_EXECUTED',
+              'BASE_UPDATE_RECOMMENDED': 'NO', 'KC00_READY_FOR_BASE_UPDATE': 'NO',
+              'KC00_PUSH_AUTHORIZED': 'NO', 'KC01_AUTHORIZED': 'NO', 'KC05_AUTHORIZED': 'NO',
+              'PHASE2_GATE_IDP': 'FAIL', 'ALL_GATES_PASS': 'NO',
+          }
+          
+          
+          def resolve():
+              raw = command(['docker', 'buildx', 'imagetools', 'inspect', TAG], 180)
+              matches = re.findall(r'^Digest:\s*(sha256:[a-f0-9]{64})\s*$', raw, re.M)
+              assert len(matches) == 1
+              return matches[0]
+          
+          
+          def trivy_scan(binary, ref, label, root):
+              try:
+                  proc = subprocess.run([binary, 'image', '--scanners', 'vuln,secret', '--severity', 'HIGH,CRITICAL',
+                                         '--format', 'json', '--quiet', '--exit-code', '1', '--timeout', '10m',
+                                         '--cache-dir', str(root / 'trivy-cache'), ref], capture_output=True, timeout=660)
+                  data = json.loads(proc.stdout)
+                  assert proc.returncode in (0, 1) and isinstance(data, dict) and isinstance(data.get('Results'), list)
+                  vulns = [(item, v) for item in data['Results'] for v in item.get('Vulnerabilities', [])]
+                  out['TRIVY_COUNTS'][label] = {
+                      'SECRET_COUNT': sum(len(item.get('Secrets', [])) for item in data['Results']),
+                      'HIGH': sum(v['Severity'] == 'HIGH' for _, v in vulns),
+                      'CRITICAL': sum(v['Severity'] == 'CRITICAL' for _, v in vulns),
+                      'EXIT_CODE': proc.returncode, 'SCAN_STATUS': 'COMPLETE',
+                  }
+                  # Only vulnerability metadata. No Trivy Secret/Match fields are retained.
+                  out['CANDIDATE_CVES'][label] = [
+                      {'CVE': v['VulnerabilityID'], 'package': v['PkgName'],
+                       'installedVersion': v['InstalledVersion'], 'fixedVersion': v.get('FixedVersion'),
+                       'severity': v['Severity'], 'location': item.get('Target')}
+                      for item, v in vulns]
+                  record(label + '_TRIVY_STDERR_PRESENT', bool(proc.stderr))
+                  del proc, data, vulns
+              except Exception as error:
+                  out['TRIVY_COUNTS'][label] = {'SCAN_STATUS': 'SCANNER_ERROR', 'ERROR_TYPE': type(error).__name__}
+          
+          
+          def compatibility(source, candidate_context, root):
+              # Reuse the approved harness unchanged; redirect its ROOT to an ephemeral copy.
+              proof_source = root / 'proof-source'
+              shutil.copytree(source, proof_source, ignore=shutil.ignore_patterns('.git', 'target', '__pycache__'))
+              shutil.copyfile(candidate_context / 'Dockerfile', proof_source / 'infra/keycloak/Dockerfile')
+              for name in ('keycloak.conf', 'visana-erp-realm.json'):
+                  assert (proof_source / 'infra/keycloak' / name).read_bytes() == (source / 'infra/keycloak' / name).read_bytes()
+              spec = importlib.util.spec_from_file_location('approved_keycloak_proof', source / 'scripts/ci/keycloak_dev.py')
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              module.ROOT, module.INFRA = proof_source, proof_source / 'infra/keycloak'
+              module.validate()
+              out['CANDIDATE_CONFIG_VALIDATE'] = 'PASS'
+              java = os.environ.get('JAVA_HOME_21_X64')
+              assert java and Path(java, 'bin/java').is_file()
+              os.environ['JAVA_HOME'] = java
+              os.environ['PATH'] = java + '/bin:' + os.environ['PATH']
+              (proof_source / 'mvnw').chmod(0o700)
+              original_run = subprocess.run
+              adapted = {'used': False, 'runningImageChecks': 0}
+          
+              def candidate_run(args, **kwargs):
+                  argv = list(args)
+                  is_compose_up = argv[:2] == ['docker', 'compose'] and 'up' in argv
+                  if is_compose_up:
+                      proof_tag = kwargs['env']['VISANA_KC_PROOF_IMAGE']
+                      command(['docker', 'tag', BUILT, proof_tag])
+                      assert json.loads(command(['docker', 'image', 'inspect', proof_tag]))[0]['Id'] == out['CANDIDATE_IMAGE_ID']
+                      argv = ['--no-build' if item == '--build' else item for item in argv]
+                      if '--no-build' not in argv:
+                          argv.append('--no-build')
+                      adapted['used'] = True
+                  result = original_run(argv, **kwargs)
+                  if is_compose_up and result.returncode == 0:
+                      base_args = argv[:argv.index('up')]
+                      query = original_run(base_args + ['ps', '-q', 'keycloak'], cwd=kwargs['cwd'], env=kwargs['env'], capture_output=True, text=True)
+                      assert query.returncode == 0 and query.stdout.strip()
+                      runtime = json.loads(command(['docker', 'inspect', query.stdout.strip()]))[0]
+                      assert runtime['Image'] == out['CANDIDATE_IMAGE_ID']
+                      adapted['runningImageChecks'] += 1
+                  return result
+          
+              module.subprocess = types.SimpleNamespace(run=candidate_run, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
+                                                       DEVNULL=subprocess.DEVNULL, TimeoutExpired=subprocess.TimeoutExpired)
+              proof_output = root / 'proof-output'
+              try:
+                  with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                      module.test(str(proof_output))
+              except Exception as error:
+                  out['COMPATIBILITY_ERROR_TYPE'] = type(error).__name__
+              result_path = proof_output / 'result.json'
+              proof = json.loads(result_path.read_text()) if result_path.exists() else {}
+              out['CANDIDATE_ISOLATED_KEYCLOAK_TEST'] = proof.get('result', 'FAIL')
+              backend = proof.get('backend_tests')
+              out['CANDIDATE_BACKEND_HEALTH_CONTRACT'] = 'PASS' if backend == {'tests': 1, 'failures': 0, 'errors': 0, 'skipped': 0} else 'FAIL'
+              out['COMPATIBILITY_CHECKS'] = proof.get('checks', [])
+              out['BACKEND_TEST_COUNTS'] = backend
+              out['POSTGRESQL_TEST_VERSION'] = proof.get('postgresql')
+              out['EXACT_CANDIDATE_IMAGE_TESTED'] = adapted['used'] and adapted['runningImageChecks'] == 2
+              out['HARNESS_ADAPTATION'] = 'Unchanged approved harness; temporary ROOT; prebuilt candidate tag; --no-build; image ID checked after both starts. Hardcoded harness version label excluded.'
+          
+          
+          def safe_report(value):
               if isinstance(value, dict):
                   for key, child in value.items():
                       assert key == 'SECRET_COUNT' or not any(s in key.lower() for s in ('secret', 'password', 'token', 'match', 'credentials', 'private_key', 'authorization'))
-                      validate(child)
+                      safe_report(child)
               elif isinstance(value, list):
                   for child in value:
-                      validate(child)
-          validate(data)
-          result = (json.dumps(data, indent=2) + '\n').encode()
-          assert hashlib.sha256(result).hexdigest() == '9e517df70ea80622673cbfd142b24ae4700bc34e8f97710423b4f5f3073abb3b'
-          Path('kc00e-keycloak-2674-assessment.json').write_bytes(result)
-          print('SANITIZED_ASSESSMENT_FINALIZED; measurement fields unchanged; no build, scan or test repeated')
+                      safe_report(child)
+          
+          
+          expected = {'Dockerfile': 'f93351e5604205160329935b5bcc0bd03f1652e9',
+                      'keycloak.conf': '608541333f0af59b0202838535c1c3b71e60e3e0',
+                      'visana-erp-realm.json': '452a1a2a0529a93b2cc0ce2ce08b739be42866f9'}
+          try:
+              source = Path('approved-source').resolve()
+              context = source / 'infra/keycloak'
+              stage = 'RESOLVE_OFFICIAL_DIGEST'
+              digest = resolve()
+              out['CANDIDATE_DIGEST'] = digest
+              BASE = TAG + '@' + digest
+              manifest = json.loads(command(['docker', 'buildx', 'imagetools', 'inspect', '--raw', BASE]))
+              amd64 = [m for m in manifest.get('manifests', []) if m.get('platform', {}).get('os') == 'linux' and m['platform'].get('architecture') == 'amd64']
+              assert len(amd64) == 1
+              out['CANDIDATE_AMD64_MANIFEST_DIGEST'] = amd64[0]['digest']
+              out['CANDIDATE_BASE'] = BASE
+              with tempfile.TemporaryDirectory(prefix='kc00f-', dir=os.environ['RUNNER_TEMP']) as temp:
+                  root = Path(temp)
+                  candidate = root / 'candidate-context'
+                  candidate.mkdir()
+                  stage = 'CANDIDATE_CONTEXT'
+                  original = (context / 'Dockerfile').read_bytes()
+                  changed = original.replace(CURRENT.encode(), BASE.encode())
+                  old_lines, new_lines = original.splitlines(keepends=True), changed.splitlines(keepends=True)
+                  differences = [(a, b) for a, b in zip(old_lines, new_lines) if a != b]
+                  assert len(old_lines) == len(new_lines) and len(differences) == 2
+                  assert all(a.startswith(b'FROM ') and b.startswith(b'FROM ') and a.replace(CURRENT.encode(), BASE.encode()) == b for a, b in differences)
+                  assert not any(line.strip().upper().startswith((b'ARG ', b'ADD ')) for line in new_lines)
+                  for name in ('keycloak.conf', 'visana-erp-realm.json', '.dockerignore'):
+                      shutil.copyfile(context / name, candidate / name)
+                  (candidate / 'Dockerfile').write_bytes(changed)
+                  out['EXACTLY_2_FROM_LINES_CHANGED'] = 'YES'
+                  stage = 'BUILD'
+                  command(['docker', 'pull', '--platform=linux/amd64', BASE], 600)
+                  command(['docker', 'build', '--platform=linux/amd64', '--pull', '--label',
+                           'org.opencontainers.image.revision=' + SOURCE, '--tag', BUILT, str(candidate)], 900)
+                  base = json.loads(command(['docker', 'image', 'inspect', BASE]))[0]
+                  built = json.loads(command(['docker', 'image', 'inspect', BUILT]))[0]
+                  for im in (base, built):
+                      assert im['Os'] == 'linux' and im['Architecture'] == 'amd64'
+                      assert not any(re.search(r'(PASSWORD|TOKEN|PRIVATE_KEY|CREDENTIALS|CLIENT_SECRET)', x.split('=', 1)[0], re.I) for x in im['Config'].get('Env', []))
+                  out['CANDIDATE_BUILD_STATUS'] = 'PASS'
+                  out['CANDIDATE_IMAGE_ID'], out['BASE_IMAGE_ID'] = built['Id'], base['Id']
+                  stage = 'SCANNER_SETUP'
+                  gl = download_binary(root, 'gitleaks', 'https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz', '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb')
+                  trivy = download_binary(root, 'trivy', 'https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz', '2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a')
+                  base_layers = set(base['RootFS']['Layers'])
+                  base_dir = export_unique_layers(BASE, base, root, 'base')
+                  built_dir = export_unique_layers(BUILT, built, root, 'built')
+                  source_dir = root / 'source'
+                  source_dir.mkdir()
+                  for name in expected:
+                      shutil.copyfile(context / name, source_dir / name)
+                  findings = {}
+                  for label, target in [('BASE', base_dir), ('BUILT', built_dir), ('SOURCE', source_dir)]:
+                      stage = 'GITLEAKS_' + label
+                      cls, code, rows, valid = scan_gitleaks(gl, target, label, root, base_layers)
+                      findings[label] = rows
+                      out['GITLEAKS_SCANS'][label] = {'class': cls, 'exitCode': code, 'validJson': valid}
+                      out['GITLEAKS_COUNTS'][label] = len(rows) if valid else None
+                      out['sanitizedFindings'].extend(rows)
+                  def equivalent(f):
+                      return f['ruleId'], f['path'].split('/', 1)[1], f['startLine'], f['endLine']
+                  base_keys = {equivalent(x) for x in findings['BASE']}
+                  built_keys = {equivalent(x) for x in findings['BUILT']}
+                  out['GITLEAKS_COUNTS']['INHERITED'] = len(base_keys & built_keys)
+                  out['GITLEAKS_COUNTS']['NEW'] = len(built_keys - base_keys)
+                  for label, ref in [('BASE', BASE), ('BUILT', BUILT)]:
+                      stage = 'TRIVY_' + label
+                      trivy_scan(trivy, ref, label, root)
+                  stage = 'COMPATIBILITY'
+                  compatibility(source, candidate, root)
+                  stage = 'DIGEST_STABILITY'
+                  out['CANDIDATE_DIGEST_STABLE'] = resolve() == digest
+                  assert out['CANDIDATE_DIGEST_STABLE']
+                  for name, blob in expected.items():
+                      assert command(['git', '-C', str(source), 'hash-object', 'infra/keycloak/' + name]).strip() == blob
+                  out['APPROVED_SOURCE_UNCHANGED'] = True
+                  if all(out['TRIVY_COUNTS'][x]['SCAN_STATUS'] == 'COMPLETE' for x in ('BASE', 'BUILT')):
+                      candidate_cves = {v['CVE'] for v in out['CANDIDATE_CVES']['BUILT']}
+                      out['REMOVED_CVES'] = sorted(BASELINE - candidate_cves)
+                      out['NEW_CVES'] = sorted(candidate_cves - BASELINE)
+                      out['UNCHANGED_CVES'] = sorted(candidate_cves & BASELINE)
+                      out['BASELINE_CVE_PRESENCE'] = {c: 'PRESENT' if c in candidate_cves else 'ABSENT' for c in sorted(BASELINE)}
+                      counts = out['TRIVY_COUNTS']['BUILT']
+                      out['HIGH_DELTA'], out['CRITICAL_DELTA'] = counts['HIGH'] - 9, counts['CRITICAL'] - 4
+                      out['CRITICAL_CLASSIFICATIONS'] = [dict(v, classification={
+                          'org.freemarker:freemarker': 'DIRECT_KEYCLOAK_RUNTIME', 'freemarker': 'DIRECT_KEYCLOAK_RUNTIME',
+                          'io.netty:netty-handler': 'TRANSITIVE_RUNTIME', 'netty-handler': 'TRANSITIVE_RUNTIME',
+                          'org.bouncycastle:bcprov-jdk18on': 'DIRECT_KEYCLOAK_RUNTIME', 'bcprov-jdk18on': 'DIRECT_KEYCLOAK_RUNTIME',
+                      }.get(v['package'], 'UNKNOWN')) for v in out['CANDIDATE_CVES']['BUILT'] if v['severity'] == 'CRITICAL']
+                      for item in out['CRITICAL_CLASSIFICATIONS']:
+                          item['classificationEvidence'] = {
+                              'io.netty:netty-handler': 'https://github.com/keycloak/keycloak/blob/26.7.5/quarkus/runtime/pom.xml',
+                              'org.bouncycastle:bcprov-jdk18on': 'https://github.com/keycloak/keycloak/blob/26.7.5/crypto/default/pom.xml',
+                              'org.freemarker:freemarker': 'https://github.com/keycloak/keycloak/blob/26.7.5/services/pom.xml',
+                          }.get(item['package'], 'NOT_EVIDENCED')
+                      out['criticalClassification'] = out['CRITICAL_CLASSIFICATIONS']
+                      out['CRITICAL_REVIEW'] = 'Dependency classification only; presence does not establish exploitability. No dependency surgery or allowlist.'
+                      out['OFFICIAL_RELEASE_REVIEW'] = {
+                          'latestObservedRelease': '26.7.5', 'observedAt': '2026-09-30',
+                          'sources': ['https://www.keycloak.org/downloads', 'https://github.com/keycloak/keycloak/releases/tag/26.7.5'],
+                          'documentedFix': ['CVE-2026-84939'],
+                          'safeOfficialPathForRemainingCriticals': 'NOT_ESTABLISHED' if counts['CRITICAL'] else 'NOT_REQUIRED',
+                          'rebuiltImage': 'Only the directly resolved stable Quay digest was evaluated',
+                      }
+                      for name, cve in [('NETTY', 'CVE-2026-75595'), ('BOUNCYCASTLE', 'CVE-2026-8763'),
+                                        ('FREEMARKER', 'CVE-2026-84939')]:
+                          rows = [v for v in out['CANDIDATE_CVES']['BUILT'] if v['CVE'] == cve]
+                          out[name + '_STATUS'] = 'PRESENT' if rows else 'ABSENT'
+                          out[name + '_INSTALLED_VERSIONS'] = sorted({v['installedVersion'] for v in rows})
+                      out['FREEMARKER_SECURITY_FIX_CONFIRMED_BY_SCAN'] = 'YES' if out['FREEMARKER_STATUS'] == 'ABSENT' else 'NO'
+                      if out['FREEMARKER_STATUS'] == 'PRESENT':
+                          rows = [v for v in out['CANDIDATE_CVES']['BUILT'] if v['CVE'] == 'CVE-2026-84939']
+                          out['FREEMARKER_PERSISTENCE_CLASS'] = ('PACKAGE_STILL_PRESENT' if
+                              all(v['location'] and v['installedVersion'] for v in rows) else 'UNKNOWN')
+                          out['FREEMARKER_PERSISTENCE_EVIDENCE'] = rows
+                      out['REMAINING_CRITICAL_FIXES'] = [
+                          {'CVE': v['CVE'], 'classification': v['classification'],
+                           'FIX_AVAILABLE': 'YES' if v.get('fixedVersion') else 'NO',
+                           'FIXED_VERSION': v.get('fixedVersion'),
+                           'OFFICIAL_KEYCLOAK_RELEASE_WITH_FIX': '26.7.5' if v['CVE'] == 'CVE-2026-84939' else 'NOT_EVIDENCED'}
+                          for v in out['CRITICAL_CLASSIFICATIONS']]
+                      security_complete = all(out['GITLEAKS_SCANS'][x]['class'] != 'SCANNER_ERROR' for x in ('BASE', 'BUILT', 'SOURCE'))
+                      security_ok = security_complete and all(out['TRIVY_COUNTS'][x]['SECRET_COUNT'] == 0 for x in ('BASE', 'BUILT'))
+                      security_ok = security_ok and out['GITLEAKS_COUNTS']['NEW'] == 0 and out['GITLEAKS_COUNTS']['SOURCE'] == 0
+                      new_critical = any(v['severity'] == 'CRITICAL' and v['CVE'] not in {'CVE-2026-75595', 'CVE-2026-8763', 'CVE-2026-84939'} for v in out['CANDIDATE_CVES']['BUILT'])
+                      improved = (counts['CRITICAL'] < 4 or bool(out['REMOVED_CVES'])) and not out['NEW_CVES'] and counts['HIGH'] <= 9 and counts['CRITICAL'] <= 4
+                      compatible = out['CANDIDATE_ISOLATED_KEYCLOAK_TEST'] == out['CANDIDATE_BACKEND_HEALTH_CONTRACT'] == 'PASS' and out['EXACT_CANDIDATE_IMAGE_TESTED']
+                      unknown = any(f['origin'] in ('UNKNOWN', 'VISANA_LAYER') for f in out['sanitizedFindings'])
+                      unknown = unknown or any(v['classification'] == 'UNKNOWN' for v in out['CRITICAL_CLASSIFICATIONS'])
+                      unknown = unknown or out.get('FREEMARKER_PERSISTENCE_CLASS') == 'UNKNOWN'
+                      out['BASE_UPDATE_RECOMMENDED'] = 'YES' if security_ok and improved and compatible and not new_critical and not unknown else 'NO'
+                      out['KC00_READY_FOR_BASE_UPDATE'] = 'YES' if out['BASE_UPDATE_RECOMMENDED'] == 'YES' and compatible else 'NO'
+                      out['compatibilityResults'] = {'validate': out['CANDIDATE_CONFIG_VALIDATE'],
+                          'isolated': out['CANDIDATE_ISOLATED_KEYCLOAK_TEST'],
+                          'backend': out['CANDIDATE_BACKEND_HEALTH_CONTRACT'],
+                          'backendTestCounts': out['BACKEND_TEST_COUNTS']}
+                      out['recommendation'] = {'baseUpdateRecommended': out['BASE_UPDATE_RECOMMENDED'],
+                          'readyForBaseUpdate': out['KC00_READY_FOR_BASE_UPDATE'],
+                          'imagePushAuthorized': 'NO'}
+                  out['KC00F_STATUS'] = 'COMPLETED' if all(out['TRIVY_COUNTS'][x]['SCAN_STATUS'] == 'COMPLETE' and out['GITLEAKS_SCANS'][x]['class'] != 'SCANNER_ERROR' for x in ('BASE', 'BUILT', 'SOURCE') if x in out['TRIVY_COUNTS']) and out['GITLEAKS_SCANS']['SOURCE']['class'] != 'SCANNER_ERROR' else 'INCOMPLETE'
+                  out['PROPOSED_DOCKERFILE_CHANGE'] = ['FROM ' + BASE + ' AS builder', 'FROM ' + BASE]
+                  stage = 'SANITIZED_ASSESSMENT'
+          except Exception as error:
+              out['ERROR_STAGE'], out['ERROR_TYPE'] = stage, type(error).__name__
+          finally:
+              out['RECORDED_AT_UTC'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+              out['LAST_STAGE'] = stage
+              out['SANITIZED_SCANNER_METADATA'] = summary
+              safe_report(out)
+              Path('kc00f-keycloak-2675-assessment.json').write_text(json.dumps(out, indent=2) + '\n')
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+                  stream.write('# KC00F candidate assessment\n\nOnly sanitized JSON artifact retained.\n')
+              print('KC00F_STATUS=' + out['KC00F_STATUS'])
+              print('SANITIZED_ARTIFACT=kc00f-keycloak-2675-assessment.json')
+          if out['KC00F_STATUS'] != 'COMPLETED':
+              raise SystemExit(1)
 
       - name: Upload sanitized assessment only
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: kc00e-keycloak-2674-assessment
-          path: kc00e-keycloak-2674-assessment.json
+          name: kc00f-keycloak-2675-assessment
+          path: kc00f-keycloak-2675-assessment.json
           if-no-files-found: error
           retention-days: 14
