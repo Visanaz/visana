@@ -16,7 +16,7 @@ jobs:
   preflight:
     if: github.repository == 'Visanaz/visana' && github.ref == 'refs/heads/ops/keycloak-dev-foundation' && github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - name: Verify actor permission and reference PR
         env:
@@ -68,8 +68,8 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
 
-      # V2 staged execution: this first push performs metadata reads only.
-      # No build/push or KC-01..04 writes until this inventory is reconciled.
+      # V2: metadata preflight precedes a separately guarded KC-00 build/push.
+      # KC-01..04 are not executed by this workflow.
       - name: Inventory current cloud metadata without payloads
         env:
           WORKFLOW_SHA: ${{ github.sha }}
@@ -153,11 +153,143 @@ jobs:
                   summary.write('- '+name+': '+item['state']+' '+item.get('reason','')+'\n')
           print('SANITIZED_REPORT=kc-preflight.json; RESULT='+report['result'])
 
+      - name: Build scan and publish only the approved Keycloak image
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+        shell: python
+        run: |
+          import json, os, re, subprocess, hashlib, tempfile, tarfile, urllib.request, datetime
+          from pathlib import Path
+          source='259727ae56487ff575a0781c6bac0814ccb64d31'
+          image='us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/visana-keycloak-dev'
+          tagged=image+':'+source
+          base='quay.io/keycloak/keycloak:26.7.3@sha256:ff4257d0d64efbe99ed1ddfaf07765cc3c36dc7518bf8324d41961327f441c54'
+          out={'KC00_SOURCE_SHA':source,'KC00_BUILD_SHA':os.environ['WORKFLOW_SHA'],'KC00_IMAGE':image,'KC00_IMAGE_DIGEST':None,'KC00_PLATFORM':'linux/amd64','KC00_STATUS':'FAIL','cloudRunWrites':False,'registryPushAttempted':False,'rawLogsOrSecretFindingsPublished':False}
+          stage='MINIMUM_INVENTORY'
+          def command(args,timeout=120):
+              p=subprocess.run(args,capture_output=True,text=True,timeout=timeout)
+              if p.returncode: raise RuntimeError('COMMAND_FAILED')
+              return p.stdout
+          def save():
+              out['lastStage']=stage
+              out['recordedAtUtc']=datetime.datetime.now(datetime.timezone.utc).isoformat()
+              Path('kc00-result.json').write_text(json.dumps(out,indent=2)+'\n')
+          try:
+              inv=json.loads(Path('kc-preflight.json').read_text())
+              assert inv.get('activeGcpIdentity')=='github-actions-dev@visana-erp-dev.iam.gserviceaccount.com'
+              r=inv['resources']
+              assert r['cloudRunKeycloak']['state']=='NOT_FOUND'
+              assert r['artifactRepository']['state']=='EXISTS_EXPECTED'
+              assert r['keycloakImage']['state']=='NOT_FOUND', 'EXISTING_IMAGE_REQUIRES_RECONCILIATION'
+              stage='TEST_REGISTRY_PERMISSIONS'
+              # Access token remains in memory and is never echoed, persisted or reported.
+              token=command(['gcloud','auth','print-access-token','--quiet']).strip()
+              required=['artifactregistry.repositories.uploadArtifacts','artifactregistry.repositories.downloadArtifacts','artifactregistry.repositories.get']
+              request=urllib.request.Request('https://artifactregistry.googleapis.com/v1/projects/visana-erp-dev/locations/us-central1/repositories/visana-repo:testIamPermissions',data=json.dumps({'permissions':required}).encode(),headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'},method='POST')
+              try:
+                  with urllib.request.urlopen(request,timeout=60) as response: granted=json.load(response).get('permissions',[])
+              finally:
+                  del token,request
+              out['registryPermissions']={p:p in granted for p in required}
+              assert all(out['registryPermissions'].values()), 'REGISTRY_PERMISSION_MISSING'
+              stage='SOURCE_AND_CONTEXT'
+              context=Path('approved-source/infra/keycloak').resolve()
+              dockerfile=(context/'Dockerfile').read_text()
+              assert [line.split()[1] for line in dockerfile.splitlines() if line.startswith('FROM ')]==[base,base]
+              assert not any(line.strip().upper().startswith(('ARG ','ADD ')) for line in dockerfile.splitlines())
+              assert (context/'.dockerignore').read_text().splitlines()==['**','!Dockerfile','!keycloak.conf','!visana-erp-realm.json']
+              # Only these approved files can enter the build context; credentials are outside it.
+              out['sourceBaseImage']=base
+              out['buildArgsProvided']=False
+              stage='BUILD'
+              command(['docker','build','--platform=linux/amd64','--pull','--label','org.opencontainers.image.revision='+source,'--label','org.opencontainers.image.source=https://github.com/Visanaz/visana','--tag',tagged,'--file',str(context/'Dockerfile'),str(context)],900)
+              local=json.loads(command(['docker','image','inspect',tagged]))[0]
+              assert local['Os']=='linux' and local['Architecture']=='amd64'
+              assert local['Config']['Labels']['org.opencontainers.image.revision']==source
+              env=local['Config'].get('Env',[])
+              assert not any(re.search(r'(PASSWORD|TOKEN|PRIVATE_KEY|CREDENTIALS|CLIENT_SECRET)',x.split('=',1)[0],re.I) for x in env)
+              out['localImageId']=local['Id'];out['localDiffIds']=local['RootFS']['Layers']
+              stage='SCAN'
+              with tempfile.TemporaryDirectory(prefix='kc00-',dir=os.environ['RUNNER_TEMP']) as temp:
+                  temp=Path(temp); binaries={}
+                  releases=[('gitleaks','https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz','551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'),('trivy','https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz','2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a')]
+                  for name,url,digest in releases:
+                      archive=temp/(name+'.tar.gz')
+                      urllib.request.urlretrieve(url,archive)
+                      assert hashlib.sha256(archive.read_bytes()).hexdigest()==digest
+                      with tarfile.open(archive) as tf:
+                          member=next(m for m in tf.getmembers() if m.name.removeprefix('./')==name and m.isfile())
+                          binary=temp/name;binary.write_bytes(tf.extractfile(member).read());binary.chmod(0o700)
+                          binaries[name]=str(binary)
+                  scan=temp/'all-image-layers';scan.mkdir()
+                  command(['docker','image','save','--output',str(scan/'image.tar'),tagged],180)
+                  # Check every saved layer, including deleted-file history, without unsafe extraction.
+                  with tarfile.open(scan/'image.tar') as saved:
+                      manifest=json.load(saved.extractfile('manifest.json'))
+                      layers=manifest[0]['Layers']
+                      out['layerCountScanned']=len(layers)
+                      for index,layerName in enumerate(layers):
+                          with saved.extractfile(layerName) as stream:
+                              layerPath=scan/('layer-'+str(index)+'.tar')
+                              with layerPath.open('wb') as target:
+                                  import shutil
+                                  shutil.copyfileobj(stream,target)
+                          with tarfile.open(layerPath) as layer:
+                              for member in layer:
+                                  basename=member.name.rsplit('/',1)[-1]
+                                  assert basename!='.env' and not (basename.startswith('gha-creds-') and basename.endswith('.json')), 'SENSITIVE_FILE_IN_IMAGE'
+                  # Gitleaks scans layers plus image config/history; raw output never leaves memory.
+                  (scan/'image-config.json').write_text(json.dumps(local['Config']))
+                  history=command(['docker','history','--no-trunc','--format','{{json .}}',tagged])
+                  (scan/'image-history.jsonl').write_text(history)
+                  leak=subprocess.run([binaries['gitleaks'],'dir',str(scan),'--max-archive-depth=3','--redact=100','--report-format=json','--report-path=/dev/stdout','--no-banner','--log-level=error'],capture_output=True,text=True,timeout=600)
+                  out['gitleaksVersion']='8.30.1';out['allLayersAndConfigScan']='PASS' if leak.returncode==0 else 'FAIL'
+                  assert leak.returncode==0, 'SECRET_SCAN_FAILED_OR_FINDINGS'
+                  trivy=subprocess.run([binaries['trivy'],'image','--scanners','vuln,secret','--severity','HIGH,CRITICAL','--format','json','--quiet','--exit-code','1','--timeout','10m',tagged],capture_output=True,text=True,timeout=660)
+                  out['trivyVersion']='0.74.0'
+                  scanResult=json.loads(trivy.stdout)
+                  vulnerabilities=[v for result in scanResult.get('Results',[]) for v in result.get('Vulnerabilities',[])]
+                  out['highCriticalVulnerabilities']=[{'id':v.get('VulnerabilityID'),'severity':v.get('Severity'),'package':v.get('PkgName'),'installedVersion':v.get('InstalledVersion'),'fixedVersion':v.get('FixedVersion')} for v in vulnerabilities]
+                  out['secretFindingCount']=sum(len(x.get('Secrets',[])) for x in scanResult.get('Results',[]))
+                  assert trivy.returncode==0 and not vulnerabilities and out['secretFindingCount']==0, 'IMAGE_SECURITY_GATE_FAILED'
+              stage='PRE_PUSH_IDEMPOTENCE'
+              existing=json.loads(command(['gcloud','artifacts','docker','images','list',image,'--include-tags','--project=visana-erp-dev','--format=json(package,version,tags)','--quiet']))
+              assert not existing, 'IMAGE_APPEARED_BEFORE_PUSH'
+              # Recheck absence immediately before the only cloud write.
+              absent=subprocess.run(['gcloud','run','services','describe','visana-keycloak-dev','--region=us-central1','--project=visana-erp-dev','--format=json(metadata.name)','--quiet'],capture_output=True,text=True,timeout=90)
+              assert absent.returncode!=0 and any(s in absent.stderr.lower() for s in ['cannot find service','could not find service','not_found','was not found'])
+              stage='PUSH'
+              command(['gcloud','auth','configure-docker','us-central1-docker.pkg.dev','--quiet'])
+              out['registryPushAttempted']=True;save()
+              command(['docker','push',tagged],600)
+              stage='REGISTRY_POSTCHECK'
+              remote=json.loads(command(['gcloud','artifacts','docker','images','describe',tagged,'--project=visana-erp-dev','--format=json','--quiet']))
+              digest=remote.get('image_summary',{}).get('digest')
+              assert digest and re.fullmatch(r'sha256:[0-9a-f]{64}',digest)
+              canonical=image+'@'+digest
+              command(['docker','pull','--platform=linux/amd64',canonical],300)
+              pulled=json.loads(command(['docker','image','inspect',canonical]))[0]
+              assert pulled['Id']==local['Id'] and pulled['RootFS']['Layers']==local['RootFS']['Layers']
+              assert pulled['Os']=='linux' and pulled['Architecture']=='amd64'
+              out['KC00_IMAGE_DIGEST']=digest;out['canonicalImage']=canonical
+              out['KC00_STATUS']='PASS';out['registryPostcheck']='PASS'
+          except Exception as error:
+              out['errorType']=type(error).__name__
+              # Exception text, command stderr, ENV and scanner raw output are deliberately not logged.
+              out['KC00_STATUS']='FAIL'
+          finally:
+              save()
+              print('KC00_STATUS='+out['KC00_STATUS']+'; LAST_STAGE='+stage)
+          if out['KC00_STATUS']!='PASS': raise SystemExit(1)
+
+
       - name: Retain sanitized inventory only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: keycloak-foundation-preflight
-          path: kc-preflight.json
+          name: keycloak-foundation-evidence
+          path: |
+            kc-preflight.json
+            kc00-result.json
           if-no-files-found: error
           retention-days: 7
