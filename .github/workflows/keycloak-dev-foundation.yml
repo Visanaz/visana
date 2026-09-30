@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   preflight:
-    if: github.repository == 'Visanaz/visana' && github.ref == 'refs/heads/ops/keycloak-dev-foundation' && github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF' && false
+    if: github.repository == 'Visanaz/visana' && github.ref == 'refs/heads/ops/keycloak-dev-foundation' && github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
