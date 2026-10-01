@@ -1,0 +1,646 @@
+name: KC00I_PCRE2_REACHABILITY_ONLY
+
+on:
+  push:
+    branches:
+      - ops/keycloak-dev-foundation
+
+permissions:
+  contents: read
+
+jobs:
+  assess:
+    if: >-
+      github.repository == 'Visanaz/visana' &&
+      github.ref == 'refs/heads/ops/keycloak-dev-foundation' &&
+      github.actor == 'KmDRF' &&
+      github.triggering_actor == 'KmDRF'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout certified PR source
+        uses: actions/checkout@v4
+        with:
+          ref: e0bbe204b9c52bb7bb50fef3bc5f5e506d33abce
+          path: approved-source
+          persist-credentials: false
+      - name: Set up Java 21 for backend contract
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Inspect Keycloak 26.8.0 runtime and PCRE2 reachability
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/kc00i.py" <<'PY'
+          """Ephemeral KC-00I runtime reachability assessment; emits sanitized JSON only."""
+          import contextlib
+          import hashlib
+          import importlib.util
+          import io
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import subprocess
+          import tarfile
+          import tempfile
+          import types
+          import urllib.parse
+          import urllib.request
+
+          SOURCE = "e0bbe204b9c52bb7bb50fef3bc5f5e506d33abce"
+          TAG = "quay.io/keycloak/keycloak:26.8.0"
+          DIGEST = "sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc"
+          BASE = TAG + "@" + DIGEST
+          OLD_BASE = "quay.io/keycloak/keycloak:26.7.5@sha256:37dbaf6f0722c9ec246335f36e1ef8b2e6cb960f7c27e0d8c615121a3d475a85"
+          PREVIOUS_RUN = 36921804827
+          PREVIOUS_ARTIFACT_SHA = "3635235c7dd70f32e36434f53f1f57054d0818fa7fcbff708deaf3334a75933b"
+          CVES = ("CVE-2026-103111", "CVE-2026-86145", "CVE-2026-89161")
+          SYMBOLS = ("pcre2_jit_stack_create", "pcre2_jit_stack_assign", "pcre2_dfa_match", "pcre2_jit_match")
+          ROOT = Path(os.environ["RUNNER_TEMP"])
+          OUT = ROOT / "kc00i-pcre2-reachability.json"
+          report = {
+              "KC00I_STATUS": "INCOMPLETE", "SOURCE_SHA": SOURCE, "KEYCLOAK_BASE_DIGEST": DIGEST,
+              "KC00H_RUN": PREVIOUS_RUN, "KC00H_ARTIFACT_SHA256": PREVIOUS_ARTIFACT_SHA,
+              "PCRE2_LOADED_IN_KEYCLOAK_PROCESS": "UNKNOWN", "PCRE2_LOADED_IN_PROCESS_TREE": "UNKNOWN",
+              "PCRE2_LOADED_PATHS": [], "JAVA_DIRECT_DEPENDS_ON_PCRE2": "UNKNOWN",
+              "JVM_NATIVE_LIBRARY_DEPENDS_ON_PCRE2": "UNKNOWN",
+              "CONSUMERS_JIT_STACK_CREATE": [], "CONSUMERS_JIT_STACK_ASSIGN": [],
+              "CONSUMERS_DFA_MATCH": [], "CONSUMERS_JIT_MATCH": [],
+              "ATTACKER_CONTROLLED_PCRE2_REGEX_PATH": "UNKNOWN",
+              "CVE103111_CONDITION_ATTACKER_REGEX": "UNKNOWN",
+              "CVE103111_CONDITION_JIT_STACK_CREATE": "UNKNOWN",
+              "CVE103111_CONDITION_JIT_STACK_ASSIGN": "UNKNOWN",
+              "CVE103111_RUNTIME_REACHABLE": "UNKNOWN",
+              "CVE86145_DFA_MATCH_USED": "UNKNOWN", "CVE86145_ATTACKER_PATTERN_PATH": "UNKNOWN",
+              "CVE86145_RUNTIME_REACHABLE": "UNKNOWN",
+              "CVE89161_JIT_MATCH_USED": "UNKNOWN", "CVE89161_REMOTE_REACHABILITY": "UNKNOWN",
+              "CVE89161_LOCAL_ATTACK_PRECONDITION": "YES",
+              "CVE89161_RUNTIME_REACHABLE": "UNKNOWN",
+              "RUNTIME_REACHABILITY": "UNKNOWN", "STOP_DECISION_FOR_VENDOR_FIX": "NO",
+              "KC00_SECURITY_EXCEPTION_ELIGIBLE": "NO", "RECOMMEND_2680_AFTER_REACHABILITY": "NO",
+              "LOGIN_FAILURE_DB_PERSISTENCE": "ENABLED_BY_DEFAULT", "COST_IMPACT": "NOT_QUANTIFIED",
+              "KC00_PUSH_AUTHORIZED": "NO", "KC01_AUTHORIZED": "NO", "KC05_AUTHORIZED": "NO",
+              "PHASE2_GATE_IDP": "FAIL", "ALL_GATES_PASS": "NO",
+              "FAILED_STAGE": None, "ERROR_TYPE": None,
+          }
+          stage = "INIT"
+
+
+          class GateFailure(Exception):
+              pass
+
+
+          def require(ok, code):
+              if not ok:
+                  raise GateFailure(code)
+
+
+          def run(args, timeout=300, allowed=(0,), cwd=None):
+              p = subprocess.run(args, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 timeout=timeout, check=False)
+              require(p.returncode in allowed, "COMMAND_FAILED_" + Path(args[0]).name)
+              return p.stdout
+
+
+          def sha(path):
+              digest = hashlib.sha256()
+              with open(path, "rb") as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(block)
+              return digest.hexdigest()
+
+
+          def pr_precheck():
+              data = json.loads(run(["gh", "api", "repos/Visanaz/visana/pulls/20"], timeout=60))
+              require(data["state"] == "open" and data["draft"] is True and data["mergeable"] is True
+                      and data["base"]["ref"] == "dev" and data["head"]["sha"] == SOURCE,
+                      "PR20_STATE_CHANGED")
+              report["PR20_HEAD"] = data["head"]["sha"]
+
+
+          def validate_source(source):
+              require(run(["git", "-C", str(source), "rev-parse", "HEAD"]).decode().strip() == SOURCE,
+                      "SOURCE_SHA_MISMATCH")
+              expected = {
+                  "infra/keycloak/Dockerfile": "44464094575a6d166798e94fc19c7da234f73f5c",
+                  "infra/keycloak/keycloak.conf": "608541333f0af59b0202838535c1c3b71e60e3e0",
+                  "infra/keycloak/visana-erp-realm.json": "452a1a2a0529a93b2cc0ce2ce08b739be42866f9",
+                  "infra/keycloak/.dockerignore": "260bae96d7a3f01435b5d7e3d23afb4768fbbc2e",
+              }
+              for path, blob in expected.items():
+                  require(run(["git", "-C", str(source), "hash-object", path]).decode().strip() == blob,
+                          "SOURCE_BLOB_MISMATCH")
+              raw = run(["docker", "buildx", "imagetools", "inspect", TAG], timeout=180).decode()
+              match = re.search(r"^Digest:\s+(sha256:[0-9a-f]{64})$", raw, re.M)
+              require(match and match.group(1) == DIGEST, "QUAY_DIGEST_CHANGED")
+              manifest = json.loads(run(["docker", "buildx", "imagetools", "inspect", "--raw", BASE], timeout=180))
+              amd64 = [m for m in manifest.get("manifests", []) if m.get("platform", {}).get("os") == "linux"
+                       and m["platform"].get("architecture") == "amd64"]
+              require(len(amd64) == 1, "AMD64_MANIFEST_MISSING")
+              report["AMD64_MANIFEST_DIGEST"] = amd64[0]["digest"]
+              report["SOURCE_INTEGRITY"] = "PASS"
+
+
+          def build_candidate(source, temp):
+              context = temp / "context"
+              context.mkdir()
+              for name in ("Dockerfile", "keycloak.conf", "visana-erp-realm.json", ".dockerignore"):
+                  shutil.copyfile(source / "infra/keycloak" / name, context / name)
+              original = (context / "Dockerfile").read_bytes()
+              require(original.count(OLD_BASE.encode()) == 2, "FROM_COUNT_MISMATCH")
+              candidate = original.replace(OLD_BASE.encode(), BASE.encode())
+              require(candidate.replace(BASE.encode(), OLD_BASE.encode()) == original,
+                      "FROM_ONLY_DIFF_MISMATCH")
+              (context / "Dockerfile").write_bytes(candidate)
+              report["EXACTLY_TWO_FROM_LINES_CHANGED"] = "YES"
+              tag = "kc00i-visana:2680"
+              run(["docker", "build", "--platform", "linux/amd64", "--pull", "--tag", tag, str(context)], timeout=1500)
+              image = json.loads(run(["docker", "image", "inspect", tag]))[0]
+              report["BUILD_STATUS"] = "PASS"
+              report["IMAGE_ID"] = image["Id"]
+              return context, tag, image["Id"]
+
+
+          def sudo_read(path):
+              return run(["sudo", "-n", "cat", str(path)], timeout=30)
+
+
+          def process_tree(container):
+              data = json.loads(run(["docker", "inspect", container]))[0]
+              root = data["State"]["Pid"]
+              require(root > 0 and data["State"]["Running"], "KEYCLOAK_CONTAINER_NOT_RUNNING")
+              rows = run(["ps", "-eo", "pid=,ppid="], timeout=30).decode().splitlines()
+              child_map = {}
+              for row in rows:
+                  bits = row.split()
+                  if len(bits) == 2:
+                      child_map.setdefault(int(bits[1]), []).append(int(bits[0]))
+              found, queue = set(), [root]
+              while queue:
+                  pid = queue.pop(0)
+                  if pid not in found:
+                      found.add(pid)
+                      queue.extend(child_map.get(pid, []))
+              return sorted(found)
+
+
+          def scrub_args(raw):
+              args = [x.decode(errors="replace") for x in raw.split(b"\x00") if x]
+              clean = []
+              hide_next = False
+              for arg in args:
+                  if hide_next:
+                      clean.append("[REDACTED_ARG]")
+                      hide_next = False
+                  elif any(word in arg.lower() for word in ("password", "secret", "token", "credential")):
+                      clean.append("[REDACTED_ARG]")
+                      hide_next = "=" not in arg
+                  else:
+                      clean.append(arg)
+              return clean
+
+
+          def inspect_pid(pid):
+              base = Path("/proc") / str(pid)
+              status = sudo_read(base / "status").decode(errors="replace")
+              namespace = re.search(r"^NSpid:\s+(.+)$", status, re.M)
+              require(namespace is not None, "NSPID_UNAVAILABLE")
+              exe = run(["sudo", "-n", "readlink", str(base / "exe")], timeout=30).decode().strip()
+              command = scrub_args(sudo_read(base / "cmdline"))
+              maps = sudo_read(base / "maps").decode(errors="replace")
+              paths = sorted({line.split()[-1].removesuffix(" (deleted)") for line in maps.splitlines()
+                              if len(line.split()) >= 6 and line.split()[-1].startswith("/")})
+              pcre2 = sorted(path for path in paths if "pcre2" in path.lower())
+              return {"hostPid": pid, "containerPid": int(namespace.group(1).split()[-1]),
+                      "command": command, "executable": exe,
+                      "loadedNativePaths": [p for p in paths if ".so" in p],
+                      "pcre2LoadedPaths": pcre2}
+
+
+          def snapshot(container, label, records, errors):
+              try:
+                  for pid in process_tree(container):
+                      try:
+                          records.append({"flow": label, **inspect_pid(pid)})
+                      except Exception as failure:
+                          errors.append({"flow": label, "hostPid": pid, "errorType": type(failure).__name__})
+              except Exception as failure:
+                  errors.append({"flow": label, "errorType": type(failure).__name__})
+
+
+          def isolated_proof(source, context, image, image_id, temp):
+              proof_source = temp / "proof-source"
+              shutil.copytree(source, proof_source, ignore=shutil.ignore_patterns(".git", "target", "__pycache__"))
+              shutil.copyfile(context / "Dockerfile", proof_source / "infra/keycloak/Dockerfile")
+              spec = importlib.util.spec_from_file_location("approved_keycloak_proof", source / "scripts/ci/keycloak_dev.py")
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              module.ROOT, module.INFRA = proof_source, proof_source / "infra/keycloak"
+              with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                  module.validate()
+              report["CONFIG_VALIDATE"] = "PASS"
+              (proof_source / "mvnw").chmod(0o700)
+              original_run, original_request = subprocess.run, module.request
+              state = {"compose": None, "container": None, "ups": 0}
+              records, errors = [], []
+
+              def wrapped_run(args, **kwargs):
+                  argv = list(args)
+                  is_up = argv[:2] == ["docker", "compose"] and "up" in argv
+                  is_down = argv[:2] == ["docker", "compose"] and "down" in argv
+                  is_image_rm = argv[:3] == ["docker", "image", "rm"]
+                  if is_down or is_image_rm:
+                      return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+                  if is_up:
+                      proof_tag = kwargs["env"]["VISANA_KC_PROOF_IMAGE"]
+                      run(["docker", "tag", image, proof_tag])
+                      require(json.loads(run(["docker", "image", "inspect", proof_tag]))[0]["Id"] == image_id,
+                              "PROOF_IMAGE_TAG_MISMATCH")
+                      argv = ["--no-build" if item == "--build" else item for item in argv]
+                      if "--no-build" not in argv:
+                          argv.append("--no-build")
+                      state["compose"] = argv[:argv.index("up")]
+                  result = original_run(argv, **kwargs)
+                  if is_up and result.returncode == 0:
+                      q = original_run(state["compose"] + ["ps", "-q", "keycloak"],
+                                       cwd=kwargs["cwd"], env=kwargs["env"], capture_output=True, text=True)
+                      require(q.returncode == 0 and q.stdout.strip(), "PROOF_CONTAINER_MISSING")
+                      state["container"] = q.stdout.strip()
+                      actual = json.loads(run(["docker", "inspect", state["container"]]))[0]
+                      require(actual["Image"] == image_id, "PROOF_RUNNING_IMAGE_MISMATCH")
+                      state["ups"] += 1
+                      snapshot(state["container"], "startup" if state["ups"] == 1 else "restart", records, errors)
+                  return result
+
+              def wrapped_request(url, *args, **kwargs):
+                  answer = original_request(url, *args, **kwargs)
+                  if state["container"]:
+                      path = urllib.parse.urlsplit(url).path
+                      label = ("token" if path.endswith("/token") else
+                               "discovery" if ".well-known" in path else
+                               "jwks" if path.endswith("/certs") else
+                               "health" if "/health/" in path else
+                               "admin" if "/admin/" in path else "realm")
+                      snapshot(state["container"], label, records, errors)
+                  return answer
+
+              module.subprocess = types.SimpleNamespace(run=wrapped_run, PIPE=subprocess.PIPE,
+                                                        STDOUT=subprocess.STDOUT, DEVNULL=subprocess.DEVNULL,
+                                                        TimeoutExpired=subprocess.TimeoutExpired)
+              module.request = wrapped_request
+              output = temp / "proof-output"
+              try:
+                  try:
+                      with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                          module.test(str(output))
+                  except Exception as failure:
+                      report["PROOF_ERROR_TYPE"] = type(failure).__name__
+                  proof_file = output / "result.json"
+                  proof = json.loads(proof_file.read_text()) if proof_file.exists() else {}
+                  report["ISOLATED_TEST"] = proof.get("result", "FAIL")
+                  report["POSTGRESQL_TEST_VERSION"] = proof.get("postgresql")
+                  report["BACKEND_TEST_COUNTS"] = proof.get("backend_tests")
+                  report["BACKEND_HEALTH_CONTRACT"] = ("PASS" if proof.get("backend_tests") ==
+                                                       {"tests": 1, "failures": 0, "errors": 0, "skipped": 0}
+                                                       else "FAIL")
+                  report["EXACT_IMAGE_TESTED"] = state["ups"] == 2
+                  require(report["ISOLATED_TEST"] == "PASS" and report["BACKEND_HEALTH_CONTRACT"] == "PASS"
+                          and report["POSTGRESQL_TEST_VERSION"] == "18.3" and report["EXACT_IMAGE_TESTED"],
+                          "ISOLATED_PROOF_FAILED")
+                  require(state["container"] is not None, "PROOF_CONTAINER_MISSING")
+                  snapshot(state["container"], "retained", records, errors)
+                  report["PROCESS_SNAPSHOTS"] = len(set(item["flow"] for item in records))
+                  report["FLOW_COVERAGE"] = sorted(set(item["flow"] for item in records))
+                  report["PROCESS_INSPECTION_ERRORS"] = errors
+                  report["PROCESS_RECORDS"] = sorted({(item["containerPid"], item["executable"],
+                                                      tuple(item["command"])) for item in records})
+                  report["PROCESS_RECORDS"] = [{"containerPid": x[0], "executable": x[1],
+                                                "command": list(x[2])} for x in report["PROCESS_RECORDS"]]
+                  return state, records, errors
+              except Exception:
+                  cleanup(state, image)
+                  raise
+
+
+          def cleanup(state, image):
+              if state.get("compose"):
+                  try:
+                      run(state["compose"] + ["down", "--volumes", "--remove-orphans"], timeout=180)
+                  except Exception:
+                      report["CLEANUP_COMPOSE"] = "FAILED"
+                  else:
+                      report["CLEANUP_COMPOSE"] = "PASS"
+              try:
+                  run(["docker", "image", "rm", image], timeout=120)
+              except Exception:
+                  report["CLEANUP_IMAGE"] = "FAILED"
+              else:
+                  report["CLEANUP_IMAGE"] = "PASS"
+
+
+          def export_rootfs(container, temp):
+              archive = temp / "rootfs.tar"
+              rootfs = temp / "rootfs"
+              rootfs.mkdir()
+              run(["docker", "export", "--output", str(archive), container], timeout=900)
+              run(["tar", "-xf", str(archive), "-C", str(rootfs), "--no-same-owner"], timeout=900)
+              archive.unlink()
+              return rootfs
+
+
+          def readelf(path, flag):
+              proc = subprocess.run(["readelf", flag, str(path)], stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, timeout=30, check=False)
+              return proc.stdout.decode(errors="replace") if proc.returncode == 0 else None
+
+
+          def scan_elf(rootfs, records):
+              consumers = {name: [] for name in SYMBOLS}
+              linked = []
+              defined = set()
+              uncertain = []
+              dynamic_strings = []
+              files_scanned = 0
+              for path in rootfs.rglob("*"):
+                  if not path.is_file() or path.is_symlink():
+                      continue
+                  try:
+                      with path.open("rb") as stream:
+                          if stream.read(4) != b"\x7fELF":
+                              continue
+                          body = stream.read()
+                  except (OSError, PermissionError):
+                      continue
+                  files_scanned += 1
+                  relative = "/" + path.relative_to(rootfs).as_posix()
+                  if b"pcre2" not in body.lower():
+                      continue
+                  dyn, sym = readelf(path, "-d"), readelf(path, "-Ws")
+                  if dyn is None or sym is None:
+                      uncertain.append(relative)
+                      continue
+                  if "libpcre2" in dyn:
+                      linked.append(relative)
+                  is_library = path.name.startswith("libpcre2")
+                  for symbol in SYMBOLS:
+                      lines = [line for line in sym.splitlines() if symbol in line]
+                      if is_library:
+                          if any(" UND " not in line for line in lines):
+                              defined.add(symbol)
+                      elif any(" UND " in line for line in lines):
+                          consumers[symbol].append(relative)
+                      elif symbol.encode() in body and not lines:
+                          dynamic_strings.append({"path": relative, "symbol": symbol})
+              report["ELF_FILES_SCANNED"] = files_scanned
+              report["ELF_PCRE2_LINKED_CONSUMERS"] = sorted(set(linked))
+              report["ELF_UNCERTAIN"] = sorted(set(uncertain))
+              report["DYNAMIC_SYMBOL_STRING_CANDIDATES"] = dynamic_strings
+              report["SYMBOL_DEFINED_BY_LIBPCRE2"] = sorted(defined)
+              names = {"pcre2_jit_stack_create": "CONSUMERS_JIT_STACK_CREATE",
+                       "pcre2_jit_stack_assign": "CONSUMERS_JIT_STACK_ASSIGN",
+                       "pcre2_dfa_match": "CONSUMERS_DFA_MATCH", "pcre2_jit_match": "CONSUMERS_JIT_MATCH"}
+              for symbol, key in names.items():
+                  report[key] = sorted(set(consumers[symbol]))
+              java_records = [item for item in records if Path(item["executable"]).name == "java"]
+              report["JAVA_PROCESS_COUNT"] = len({item["hostPid"] for item in java_records})
+              if not java_records:
+                  return
+              java_exes = sorted({item["executable"] for item in java_records})
+              java_paths = [rootfs / path.lstrip("/") for path in java_exes]
+              java_dyn = [readelf(path, "-d") for path in java_paths if path.is_file()]
+              report["JAVA_DIRECT_DEPENDS_ON_PCRE2"] = (
+                  "UNKNOWN" if not java_dyn or any(x is None for x in java_dyn) else
+                  "YES" if any("libpcre2" in x for x in java_dyn) else "NO")
+              loaded = sorted({path for item in java_records for path in item["loadedNativePaths"]})
+              report["JVM_NATIVE_LIBRARIES_INSPECTED"] = len(loaded)
+              libraries = []
+              for path in loaded:
+                  candidate = rootfs / path.lstrip("/")
+                  if candidate.is_file():
+                      dependencies = readelf(candidate, "-d")
+                      if dependencies is not None:
+                          libraries.append((path, dependencies))
+                      else:
+                          uncertain.append(path)
+                  else:
+                      uncertain.append(path)
+              report["JVM_NATIVE_LIBRARY_DEPENDS_ON_PCRE2"] = (
+                  "UNKNOWN" if uncertain else
+                  "YES" if any("libpcre2" in dep for _, dep in libraries) else "NO")
+              report["LOADED_NATIVE_PCRE2_CONSUMERS"] = sorted(path for path, dep in libraries if "libpcre2" in dep)
+              report["LOADED_NATIVE_INSPECTION_GAPS"] = sorted(set(uncertain))
+              libjvm = [path for path in loaded if path.endswith("/libjvm.so")]
+              report["LIBJVM_PATHS"] = libjvm
+              report["LIBJVM_DIRECT_DEPENDS_ON_PCRE2"] = (
+                  "UNKNOWN" if not libjvm else
+                  "YES" if any("libpcre2" in dep for path, dep in libraries if path in libjvm) else "NO")
+
+
+          def rpm_dependencies(rootfs):
+              dbpaths = [rootfs / "usr/lib/sysimage/rpm", rootfs / "var/lib/rpm"]
+              dbpath = next((x for x in dbpaths if x.exists()), None)
+              if dbpath is None:
+                  report["RPM_QUERY_STATUS"] = "RPMDB_NOT_FOUND"
+                  report["PCRE2_REQUIRED_BY_PACKAGES"] = []
+                  return
+              helper = "registry.access.redhat.com/ubi9/ubi:9.8"
+              command = ["docker", "run", "--rm", "--network", "none", "--volume", str(rootfs) + ":/analysis:ro",
+                         "--entrypoint", "rpm", helper, "--dbpath", "/analysis/" + dbpath.relative_to(rootfs).as_posix(),
+                         "-qa", "--qf", "%{NAME}\\t[%{REQUIRENAME} ]\\n"]
+              try:
+                  raw = run(command, timeout=300).decode(errors="replace")
+              except Exception as failure:
+                  report["RPM_QUERY_STATUS"] = "UNAVAILABLE_" + type(failure).__name__
+                  report["PCRE2_REQUIRED_BY_PACKAGES"] = []
+                  return
+              items = []
+              for row in raw.splitlines():
+                  if "\t" not in row:
+                      continue
+                  name, requirements = row.split("\t", 1)
+                  matched = sorted({x for x in requirements.split() if "pcre2" in x.lower()})
+                  if not matched:
+                      continue
+                  lower = name.lower()
+                  category = ("JVM_RUNTIME" if lower.startswith(("java-", "jdk-")) else
+                              "PACKAGE_MANAGER_SUPPORT" if lower.startswith(("rpm", "dnf", "libdnf")) else
+                              "SYSTEM_UTILITY" if lower in ("grep", "less", "sed", "findutils", "glib2") else
+                              "UNKNOWN")
+                  items.append({"package": name, "requires": matched, "class": category})
+              report["RPM_QUERY_STATUS"] = "PASS"
+              report["PCRE2_REQUIRED_BY_PACKAGES"] = sorted(items, key=lambda x: x["package"])
+
+
+          def source_and_realm(source, rootfs, temp):
+              realm = json.loads((source / "infra/keycloak/visana-erp-realm.json").read_text())
+              text = json.dumps(realm).lower()
+              flags = {word: word in text for word in ("regex", "script", "native", "upload")}
+              report["VISANA_REALM_FEATURE_FLAGS"] = flags
+              report["VISANA_DOCKERFILE_CUSTOM_NATIVE_COPY"] = ("NO" if
+                  all("COPY " not in line or "--from=builder" in line or
+                      "keycloak.conf" in line or "visana-erp-realm.json" in line
+                      for line in (source / "infra/keycloak/Dockerfile").read_text().splitlines()) else "UNKNOWN")
+              providers = rootfs / "opt/keycloak/providers"
+              report["KEYCLOAK_PROVIDER_FILES"] = sorted("/" + x.relative_to(rootfs).as_posix()
+                                                         for x in providers.rglob("*") if x.is_file()) if providers.exists() else []
+              clone = temp / "keycloak-source"
+              try:
+                  run(["git", "clone", "--depth", "1", "--branch", "26.8.0", "--single-branch",
+                       "--filter=blob:none", "https://github.com/keycloak/keycloak.git", str(clone)], timeout=900)
+                  digest = run(["git", "-C", str(clone), "rev-parse", "HEAD"]).decode().strip()
+                  require(digest == "4246609cf2024c85016d3fb1254c3d2533367c31", "KEYCLOAK_SOURCE_TAG_CHANGED")
+                  result = subprocess.run(["rg", "-l", "-i", "pcre2|libpcre2|pcre2_jit_stack_create|pcre2_jit_stack_assign",
+                                           "."], cwd=clone, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                          timeout=300, check=False)
+                  require(result.returncode in (0, 1), "KEYCLOAK_SOURCE_SEARCH_FAILED")
+                  paths = sorted(x.removeprefix("./") for x in result.stdout.decode().splitlines())
+                  code_extensions = (".java", ".c", ".h", ".cc", ".cpp", ".rs", ".go", ".sh", ".xml", ".properties")
+                  report["KEYCLOAK_SOURCE_REFERENCES"] = paths[:100]
+                  report["KEYCLOAK_SOURCE_DIRECT_CODE_REFERENCES"] = [x for x in paths if x.endswith(code_extensions)]
+                  report["KEYCLOAK_SOURCE_SEARCH_STATUS"] = "PASS"
+              except Exception as failure:
+                  report["KEYCLOAK_SOURCE_SEARCH_STATUS"] = "UNKNOWN_" + type(failure).__name__
+                  report["KEYCLOAK_SOURCE_DIRECT_CODE_REFERENCES"] = None
+
+
+          def vendor_status():
+              status = {}
+              for cve in CVES:
+                  try:
+                      with urllib.request.urlopen("https://access.redhat.com/hydra/rest/securitydata/cve/" + cve + ".json",
+                                                  timeout=30) as response:
+                          data = json.load(response)
+                      states = sorted({x.get("fix_state") for x in data.get("package_state", [])
+                                       if x.get("product_name") == "Red Hat Enterprise Linux 9"
+                                       and x.get("package_name") == "pcre2"})
+                      releases = [x for x in data.get("affected_release", [])
+                                  if x.get("product_name") == "Red Hat Enterprise Linux 9"
+                                  and str(x.get("package", "")).startswith("pcre2-")]
+                      status[cve] = {"RHEL9_PCRE2_STATUS": states[0] if len(states) == 1 else "UNKNOWN",
+                                     "ADVISORIES": sorted({x.get("advisory") for x in releases if x.get("advisory")}),
+                                     "FIXED_PACKAGES": sorted({x.get("package") for x in releases if x.get("package")}),
+                                     "SOURCE": "https://access.redhat.com/hydra/rest/securitydata/cve/" + cve + ".json"}
+                  except Exception as failure:
+                      status[cve] = {"RHEL9_PCRE2_STATUS": "UNKNOWN", "ERROR_TYPE": type(failure).__name__}
+              report["RED_HAT_STATUS"] = status
+              fixed = any(x.get("FIXED_PACKAGES") for x in status.values())
+              report["STOP_DECISION_FOR_VENDOR_FIX"] = "YES" if fixed else "NO"
+              report["RED_HAT_FIXED_PACKAGE"] = sorted({pkg for x in status.values() for pkg in x.get("FIXED_PACKAGES", [])})
+              report["RED_HAT_ADVISORY"] = sorted({ad for x in status.values() for ad in x.get("ADVISORIES", [])})
+
+
+          def decide(records, errors):
+              java = [x for x in records if Path(x["executable"]).name == "java"]
+              tree = records
+              java_loaded = sorted({p for x in java for p in x["pcre2LoadedPaths"]})
+              tree_loaded = sorted({p for x in tree for p in x["pcre2LoadedPaths"]})
+              report["PCRE2_LOADED_PATHS"] = tree_loaded
+              report["PCRE2_LOADED_IN_KEYCLOAK_PROCESS"] = "UNKNOWN" if not java or errors else "YES" if java_loaded else "NO"
+              report["PCRE2_LOADED_IN_PROCESS_TREE"] = "UNKNOWN" if not tree or errors else "YES" if tree_loaded else "NO"
+              no_realm_path = (not any(report["VISANA_REALM_FEATURE_FLAGS"].values()) and
+                               report["VISANA_DOCKERFILE_CUSTOM_NATIVE_COPY"] == "NO" and
+                               not report["KEYCLOAK_PROVIDER_FILES"] and
+                               report["KEYCLOAK_SOURCE_SEARCH_STATUS"] == "PASS" and
+                               not report["KEYCLOAK_SOURCE_DIRECT_CODE_REFERENCES"])
+              report["ATTACKER_CONTROLLED_PCRE2_REGEX_PATH"] = "NO" if no_realm_path else "UNKNOWN"
+              report["CVE103111_CONDITION_ATTACKER_REGEX"] = report["ATTACKER_CONTROLLED_PCRE2_REGEX_PATH"]
+              report["CVE103111_CONDITION_JIT_STACK_CREATE"] = "NO" if not report["CONSUMERS_JIT_STACK_CREATE"] else "UNKNOWN"
+              report["CVE103111_CONDITION_JIT_STACK_ASSIGN"] = "NO" if not report["CONSUMERS_JIT_STACK_ASSIGN"] else "UNKNOWN"
+              report["CVE86145_DFA_MATCH_USED"] = "NO" if not report["CONSUMERS_DFA_MATCH"] else "UNKNOWN"
+              report["CVE86145_ATTACKER_PATTERN_PATH"] = report["ATTACKER_CONTROLLED_PCRE2_REGEX_PATH"]
+              report["CVE89161_JIT_MATCH_USED"] = "NO" if not report["CONSUMERS_JIT_MATCH"] else "UNKNOWN"
+              report["CVE89161_REMOTE_REACHABILITY"] = "NO" if no_realm_path else "UNKNOWN"
+              complete = (report["PCRE2_LOADED_IN_KEYCLOAK_PROCESS"] == "NO" and
+                          report["PCRE2_LOADED_IN_PROCESS_TREE"] == "NO" and
+                          report["JAVA_DIRECT_DEPENDS_ON_PCRE2"] == "NO" and
+                          report["JVM_NATIVE_LIBRARY_DEPENDS_ON_PCRE2"] == "NO" and
+                          not report["ELF_UNCERTAIN"] and not report["DYNAMIC_SYMBOL_STRING_CANDIDATES"] and
+                          all(not report[key] for key in ("CONSUMERS_JIT_STACK_CREATE", "CONSUMERS_JIT_STACK_ASSIGN",
+                                                              "CONSUMERS_DFA_MATCH", "CONSUMERS_JIT_MATCH")) and
+                          no_realm_path and report["RPM_QUERY_STATUS"] == "PASS" and
+                          all(x.get("RHEL9_PCRE2_STATUS") != "UNKNOWN" for x in report["RED_HAT_STATUS"].values()))
+              report["RUNTIME_REACHABILITY"] = "NOT_DEMONSTRATED" if complete else "UNKNOWN"
+              for key in ("CVE103111_RUNTIME_REACHABLE", "CVE86145_RUNTIME_REACHABLE", "CVE89161_RUNTIME_REACHABLE"):
+                  report[key] = "NOT_DEMONSTRATED" if complete else "UNKNOWN"
+              report["CLOUD_RUN_THREAT_MODEL"] = {
+                  "scope": "PROPOSED_DEV_NOT_DEPLOYED", "publicShell": "NO", "ssh": "NO",
+                  "networkIngress": "HTTP", "database": "EXTERNAL_POSTGRESQL",
+                  "limitation": "Model does not prove absence of process compromise or every possible request path."}
+              vendor_no_fix = all(x.get("RHEL9_PCRE2_STATUS") == "Affected" and
+                                  not x.get("FIXED_PACKAGES") for x in report["RED_HAT_STATUS"].values())
+              eligible = complete and vendor_no_fix and report["STOP_DECISION_FOR_VENDOR_FIX"] == "NO"
+              report["KC00_SECURITY_EXCEPTION_ELIGIBLE"] = "YES" if eligible else "NO"
+              report["RECOMMEND_2680_AFTER_REACHABILITY"] = "YES" if eligible else "NO"
+              if eligible:
+                  report["SECURITY_EXCEPTION_PROPOSAL"] = {
+                      "status": "PENDING_HUMAN_APPROVAL", "scope": "Keycloak DEV only",
+                      "cves": list(CVES), "durationDays": 14,
+                      "earlierEnd": ["Red Hat fixed RHEL9/UBI package", "Keycloak image with fixed package",
+                                     "new exploitability evidence"],
+                      "controls": ["no custom native extensions", "no untrusted native regex path",
+                                   "no shell exposure", "immutable image", "Cloud Run managed runtime",
+                                   "re-scan before promotion", "upgrade on vendor fix"],
+                      "productionApplicability": "NO"}
+
+
+          def main():
+              global stage
+              stage = "PR20_PRECHECK"
+              pr_precheck()
+              source = Path("approved-source").resolve()
+              stage = "SOURCE_AND_QUAY"
+              validate_source(source)
+              state = None
+              with tempfile.TemporaryDirectory(prefix="kc00i-", dir=ROOT) as tmp:
+                  temp = Path(tmp)
+                  stage = "BUILD"
+                  context, image, image_id = build_candidate(source, temp)
+                  try:
+                      stage = "ISOLATED_PROOF_AND_PROCESS_CAPTURE"
+                      state, records, errors = isolated_proof(source, context, image, image_id, temp)
+                      stage = "ROOTFS_ELF"
+                      rootfs = export_rootfs(state["container"], temp)
+                      scan_elf(rootfs, records)
+                      stage = "RPM_DEPENDENCIES"
+                      rpm_dependencies(rootfs)
+                      stage = "SOURCE_AND_REALM"
+                      source_and_realm(source, rootfs, temp)
+                      stage = "VENDOR_STATUS"
+                      vendor_status()
+                      stage = "DECISION"
+                      decide(records, errors)
+                      pr_precheck()
+                      report["KC00I_STATUS"] = "COMPLETE" if report["RUNTIME_REACHABILITY"] != "UNKNOWN" else "PARTIAL_UNKNOWN"
+                  finally:
+                      if state is not None:
+                          cleanup(state, image)
+
+
+          try:
+              main()
+          except Exception as failure:
+              report["KC00I_STATUS"] = "FAILED"
+              report["FAILED_STAGE"] = stage
+              report["ERROR_TYPE"] = type(failure).__name__
+              if isinstance(failure, GateFailure):
+                  report["FAIL_CODE"] = str(failure)
+          finally:
+              OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+              print("KC00I_STATUS=" + report["KC00I_STATUS"])
+              print("FAILED_STAGE=" + str(report["FAILED_STAGE"]))
+          if report["KC00I_STATUS"] == "FAILED":
+              raise SystemExit(1)
+          PY
+          python3 "$RUNNER_TEMP/kc00i.py"
+      - name: Upload sanitized KC-00I evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kc00i-pcre2-reachability
+          path: ${{ runner.temp }}/kc00i-pcre2-reachability.json
+          if-no-files-found: error
