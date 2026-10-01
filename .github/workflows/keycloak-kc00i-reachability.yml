@@ -246,7 +246,7 @@ jobs:
               report["CONFIG_VALIDATE"] = "PASS"
               (proof_source / "mvnw").chmod(0o700)
               original_run, original_request = subprocess.run, module.request
-              state = {"compose": None, "container": None, "ups": 0}
+              state = {"compose": None, "container": None, "ups": 0, "env": None, "cwd": None}
               records, errors = [], []
 
               def wrapped_run(args, **kwargs):
@@ -265,6 +265,8 @@ jobs:
                       if "--no-build" not in argv:
                           argv.append("--no-build")
                       state["compose"] = argv[:argv.index("up")]
+                      state["env"] = kwargs["env"]
+                      state["cwd"] = kwargs["cwd"]
                   result = original_run(argv, **kwargs)
                   if is_up and result.returncode == 0:
                       q = original_run(state["compose"] + ["ps", "-q", "keycloak"],
@@ -330,7 +332,10 @@ jobs:
           def cleanup(state, image):
               if state.get("compose"):
                   try:
-                      run(state["compose"] + ["down", "--volumes", "--remove-orphans"], timeout=180)
+                      result = subprocess.run(state["compose"] + ["down", "--volumes", "--remove-orphans"],
+                                              cwd=state["cwd"], env=state["env"], stdout=subprocess.PIPE,
+                                              stderr=subprocess.PIPE, timeout=180, check=False)
+                      require(result.returncode == 0, "COMPOSE_CLEANUP_FAILED")
                   except Exception:
                       report["CLEANUP_COMPOSE"] = "FAILED"
                   else:
@@ -478,8 +483,20 @@ jobs:
 
           def source_and_realm(source, rootfs, temp):
               realm = json.loads((source / "infra/keycloak/visana-erp-realm.json").read_text())
-              text = json.dumps(realm).lower()
-              flags = {word: word in text for word in ("regex", "script", "native", "upload")}
+              def configuration_strings(value):
+                  if isinstance(value, dict):
+                      for key, item in value.items():
+                          if key != "description":
+                              yield key
+                              yield from configuration_strings(item)
+                  elif isinstance(value, list):
+                      for item in value:
+                          yield from configuration_strings(item)
+                  elif isinstance(value, str):
+                      yield value
+              strings = [item.lower() for item in configuration_strings(realm)]
+              flags = {word: any(word in item for item in strings)
+                       for word in ("regex", "regexp", "script", "javascript", "native", "upload")}
               report["VISANA_REALM_FEATURE_FLAGS"] = flags
               report["VISANA_DOCKERFILE_CUSTOM_NATIVE_COPY"] = ("NO" if
                   all("COPY " not in line or "--from=builder" in line or
@@ -487,15 +504,17 @@ jobs:
                       for line in (source / "infra/keycloak/Dockerfile").read_text().splitlines()) else "UNKNOWN")
               providers = rootfs / "opt/keycloak/providers"
               report["KEYCLOAK_PROVIDER_FILES"] = sorted("/" + x.relative_to(rootfs).as_posix()
-                                                         for x in providers.rglob("*") if x.is_file()) if providers.exists() else []
+                                                         for x in providers.rglob("*")
+                                                         if x.is_file() and x.suffix in (".jar", ".so", ".class")) if providers.exists() else []
               clone = temp / "keycloak-source"
               try:
                   run(["git", "clone", "--depth", "1", "--branch", "26.8.0", "--single-branch",
                        "--filter=blob:none", "https://github.com/keycloak/keycloak.git", str(clone)], timeout=900)
                   digest = run(["git", "-C", str(clone), "rev-parse", "HEAD"]).decode().strip()
                   require(digest == "4246609cf2024c85016d3fb1254c3d2533367c31", "KEYCLOAK_SOURCE_TAG_CHANGED")
-                  result = subprocess.run(["rg", "-l", "-i", "pcre2|libpcre2|pcre2_jit_stack_create|pcre2_jit_stack_assign",
-                                           "."], cwd=clone, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                  result = subprocess.run(["git", "grep", "-l", "-i", "-E",
+                                           "pcre2|libpcre2|pcre2_jit_stack_create|pcre2_jit_stack_assign",
+                                           "--", "."], cwd=clone, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                           timeout=300, check=False)
                   require(result.returncode in (0, 1), "KEYCLOAK_SOURCE_SEARCH_FAILED")
                   paths = sorted(x.removeprefix("./") for x in result.stdout.decode().splitlines())
@@ -512,8 +531,10 @@ jobs:
               status = {}
               for cve in CVES:
                   try:
-                      with urllib.request.urlopen("https://access.redhat.com/hydra/rest/securitydata/cve/" + cve + ".json",
-                                                  timeout=30) as response:
+                      address = "https://access.redhat.com/hydra/rest/securitydata/cve/" + cve + ".json"
+                      request = urllib.request.Request(address,
+                                                       headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+                      with urllib.request.urlopen(request, timeout=30) as response:
                           data = json.load(response)
                       states = sorted({x.get("fix_state") for x in data.get("package_state", [])
                                        if x.get("product_name") == "Red Hat Enterprise Linux 9"
