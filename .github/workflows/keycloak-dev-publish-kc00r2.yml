@@ -129,7 +129,7 @@ jobs:
           EXPIRES = datetime(2026, 10, 15, 21, 33, tzinfo=timezone.utc)
           KNOWN_FINDING = (
               "generic-api-key",
-              "layers/sha256-49acb71b9c32354ae89f55ac6ba83e8021b6713135c12020f6db5429a66c9a68.tar!"
+              "layers/sha256-1dde54818391066dc754422bdf713e4c07e3ddf08ea17602604f67daedc2bf1f.tar!"
               "etc/java/java-21-openjdk/java-21-openjdk-21.0.12.1.1-1.2.el9.x86_64/conf/security/java.security",
               1035,
               1035,
@@ -524,7 +524,7 @@ jobs:
                           (not base_findings or base_findings == {KNOWN_FINDING}),
                           "GITLEAKS_GATE_FAILED")
                   if inherited:
-                      known_diff_id = "sha256:49acb71b9c32354ae89f55ac6ba83e8021b6713135c12020f6db5429a66c9a68"
+                      known_diff_id = "sha256:1dde54818391066dc754422bdf713e4c07e3ddf08ea17602604f67daedc2bf1f"
                       require(known_diff_id in base["RootFS"]["Layers"] and
                               known_diff_id in built["RootFS"]["Layers"], "INHERITED_LAYER_MISMATCH")
 
