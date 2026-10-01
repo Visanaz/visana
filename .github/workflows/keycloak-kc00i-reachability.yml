@@ -389,9 +389,10 @@ jobs:
                   if dyn is None or sym is None:
                       uncertain.append(relative)
                       continue
-                  if "libpcre2" in dyn:
-                      linked.append(relative)
                   is_library = path.name.startswith("libpcre2")
+                  if not is_library and any("(NEEDED)" in line and "libpcre2" in line
+                                            for line in dyn.splitlines()):
+                      linked.append(relative)
                   for symbol in SYMBOLS:
                       lines = [line for line in sym.splitlines() if symbol in line]
                       if is_library:
