@@ -503,6 +503,12 @@ jobs:
                   inherited = base_findings & built_findings
                   new = built_findings - base_findings
                   unknown = (base_findings | built_findings) - {KNOWN_FINDING}
+                  report["GITLEAKS_SIGNATURES_SANITIZED"] = {
+                      "base": sorted([{"rule": rule, "path": path, "start": start, "end": end}
+                                      for rule, path, start, end in base_findings], key=lambda x: (x["path"], x["start"])),
+                      "built": sorted([{"rule": rule, "path": path, "start": start, "end": end}
+                                       for rule, path, start, end in built_findings], key=lambda x: (x["path"], x["start"])),
+                  }
                   report.update({
                       "GITLEAKS_BASE_FINDINGS": len(base_findings),
                       "GITLEAKS_BUILT_FINDINGS": len(built_findings),
@@ -510,7 +516,8 @@ jobs:
                       "GITLEAKS_INHERITED_FINDINGS": len(inherited),
                       "GITLEAKS_NEW_FINDINGS": len(new),
                       "GITLEAKS_UNKNOWN_FINDINGS": len(unknown),
-                      "GITLEAKS_INHERITED_CLASS": "KNOWN_INHERITED_BASE_FINDING" if inherited else "NONE",
+                      "GITLEAKS_INHERITED_CLASS": ("UNCLASSIFIED_INHERITED_FINDING" if unknown else
+                                                    "KNOWN_INHERITED_BASE_FINDING" if inherited else "NONE"),
                   })
                   require(not source_findings and not new and not unknown and
                           base_findings == built_findings and
