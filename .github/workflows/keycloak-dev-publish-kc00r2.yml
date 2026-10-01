@@ -1,4 +1,4 @@
-name: KC00R2_PUBLISH_IMMUTABLE_KEYCLOAK_DEV_ONLY
+name: KC00R2_READONLY_REMOTE_POSTCHECK
 
 on:
   push:
@@ -8,612 +8,137 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: keycloak-dev-publish-kc00r2
-  cancel-in-progress: false
-
 jobs:
-  publish:
+  postcheck:
     if: >-
       github.repository == 'Visanaz/visana' &&
       github.ref == 'refs/heads/ops/keycloak-dev-foundation' &&
       github.actor == 'KmDRF' &&
       github.triggering_actor == 'KmDRF'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
-      - name: Verify actor, PR source and certifying CI before GCP authentication
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: python
-        run: |
-          import json
-          import subprocess
-          def api(path):
-              result = subprocess.run(['gh', 'api', path], capture_output=True, text=True)
-              if result.returncode:
-                  raise SystemExit('GITHUB_PREFLIGHT_FAILED')
-              return json.loads(result.stdout)
-          permission = api('repos/Visanaz/visana/collaborators/KmDRF/permission')
-          assert permission['permission'] in ('write', 'maintain', 'admin')
-          pr = api('repos/Visanaz/visana/pulls/20')
-          sha = '8701fc5b377af72665dce210203e43c0433a1fbd'
-          assert pr['state'] == 'open' and pr['draft'] and not pr['merged']
-          assert pr['base']['ref'] == 'dev' and pr['head']['sha'] == sha
-          run = api('repos/Visanaz/visana/actions/runs/36930895799')
-          assert run['head_sha'] == sha and run['status'] == 'completed' and run['conclusion'] == 'success'
-          jobs = api('repos/Visanaz/visana/actions/runs/36930895799/jobs')
-          assert any(j['name'] == 'verify / verify' and j['conclusion'] == 'success' for j in jobs['jobs'])
-          print('GITHUB_PREFLIGHT=PASS')
-
-      - name: Checkout exact certified source SHA
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: 8701fc5b377af72665dce210203e43c0433a1fbd
-          path: approved-source
-          persist-credentials: false
-
-      - name: Verify exact Keycloak source blobs and pinned base
-        shell: python
-        run: |
-          import subprocess
-          from pathlib import Path
-          source = Path('approved-source')
-          sha = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
-          assert sha == '8701fc5b377af72665dce210203e43c0433a1fbd'
-          expected = {
-              'infra/keycloak/Dockerfile': 'dfe51748dc1c052ccb961d1368302ea6ffdcf3e1',
-              'infra/keycloak/keycloak.conf': '608541333f0af59b0202838535c1c3b71e60e3e0',
-              'infra/keycloak/visana-erp-realm.json': '452a1a2a0529a93b2cc0ce2ce08b739be42866f9',
-              'infra/keycloak/.dockerignore': '260bae96d7a3f01435b5d7e3d23afb4768fbbc2e',
-               'scripts/ci/keycloak_dev.py': 'bb25ac0a9057f363c32aac7db61b9ab11605f11c',
-               'README.md': '5b539cfb9476b7c17c3c1b85b03346234317293b',
-               'docs/04_architecture/CLOUD_ARCHITECTURE.md': '8c6aefef2a63f594621b016ca50abafb351e35c2',
-               'docs/00_governance/SECURITY_EXCEPTION_KEYCLOAK_PCRE2_DEV_20261001.md': '4faa0b8cbbb17c1447128d2fc5d2052a11c7900d',
-          }
-          for path, blob in expected.items():
-              actual = subprocess.check_output(['git', '-C', str(source), 'hash-object', path], text=True).strip()
-              assert actual == blob, 'SOURCE_BLOB_MISMATCH'
-          base = 'quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc'
-          from_lines = [line for line in (source/'infra/keycloak/Dockerfile').read_text().splitlines() if line.startswith('FROM ')]
-          assert len(from_lines) == 2 and all(line.split()[1] == base for line in from_lines)
-          print('SOURCE_INTEGRITY=PASS')
-
       - name: Authenticate exact DEV deployer identity
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS }}
           project_id: visana-erp-dev
-
       - name: Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
-
-      - name: Run guarded KC-00R2 build, security gates and single registry push
+      - name: Verify remote image and cloud inventory read only
         shell: python
         run: |
-          """Ephemeral KC-00R2 runner. Embedded only in the temporary workflow."""
-          from datetime import datetime, timezone
-          import gzip
-          import hashlib
           import json
           import os
           from pathlib import Path
           import re
-          import shutil
           import subprocess
-          import tarfile
-          import tempfile
-          import urllib.request
 
-          SOURCE = "8701fc5b377af72665dce210203e43c0433a1fbd"
-          PROJECT = "visana-erp-dev"
-          REGION = "us-central1"
-          REPO = "visana-repo"
-          PACKAGE = "visana-keycloak-dev"
-          BASE_DIGEST = "sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc"
-          BASE = "quay.io/keycloak/keycloak:26.8.0@" + BASE_DIGEST
-          IMAGE = f"{REGION}-docker.pkg.dev/{PROJECT}/{REPO}/{PACKAGE}"
-          TAG = IMAGE + ":" + SOURCE
-          EXPECTED_BLOBS = {
-              "infra/keycloak/Dockerfile": "dfe51748dc1c052ccb961d1368302ea6ffdcf3e1",
-              "infra/keycloak/keycloak.conf": "608541333f0af59b0202838535c1c3b71e60e3e0",
-              "infra/keycloak/visana-erp-realm.json": "452a1a2a0529a93b2cc0ce2ce08b739be42866f9",
-              "infra/keycloak/.dockerignore": "260bae96d7a3f01435b5d7e3d23afb4768fbbc2e",
-              "scripts/ci/keycloak_dev.py": "bb25ac0a9057f363c32aac7db61b9ab11605f11c",
-              "README.md": "5b539cfb9476b7c17c3c1b85b03346234317293b",
-              "docs/04_architecture/CLOUD_ARCHITECTURE.md": "8c6aefef2a63f594621b016ca50abafb351e35c2",
-              "docs/00_governance/SECURITY_EXCEPTION_KEYCLOAK_PCRE2_DEV_20261001.md": "4faa0b8cbbb17c1447128d2fc5d2052a11c7900d",
-          }
-          HIGH_ALLOWED = {"CVE-2026-103111", "CVE-2026-86145", "CVE-2026-89161"}
-          EXCEPTION_ID = "VISANA-SEC-EXC-KC-PCRE2-20261001"
-          EXPIRES = datetime(2026, 10, 15, 21, 33, tzinfo=timezone.utc)
-          KNOWN_FINDING = (
-              "generic-api-key",
-              "layers/sha256-1dde54818391066dc754422bdf713e4c07e3ddf08ea17602604f67daedc2bf1f.tar!"
-              "etc/java/java-21-openjdk/java-21-openjdk-21.0.12.1.1-1.2.el9.x86_64/conf/security/java.security",
-              1035,
-              1035,
-          )
-          GITLEAKS_URL = "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
-          GITLEAKS_SHA = "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
-          TRIVY_URL = "https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz"
-          TRIVY_SHA = "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a"
-          REPORT_PATH = Path(os.environ["RUNNER_TEMP"]) / "kc00r2-publish-result.json"
-          report = {
-              "KC00R2_STATUS": "INCOMPLETE", "SOURCE_SHA": SOURCE,
-              "SOURCE_BLOBS": EXPECTED_BLOBS, "SOURCE_INTEGRITY": "NOT_RUN",
-              "SECURITY_EXCEPTION_ID": EXCEPTION_ID,
-              "SECURITY_EXCEPTION_STATUS": "UNKNOWN",
-              "SECURITY_EXCEPTION_EXPIRES": "2026-10-15 16:33 America/Bogota",
-              "RUNTIME_REACHABILITY": "UNKNOWN", "VENDOR_FIX_AVAILABLE": "UNKNOWN",
-              "VENDOR_STATUS": "UNKNOWN", "RED_HAT_STATUS": {}, "TRIVY_DB_UPDATED_AT": None,
-              "KEYCLOAK_VERSION": "26.8.0", "KEYCLOAK_BASE_DIGEST": BASE_DIGEST,
-              "BUILD_STATUS": "NOT_RUN", "PLATFORM": "linux/amd64", "LOCAL_IMAGE_ID": None,
-              "ROOTFS_DIFF_IDS": [], "GITLEAKS_BASE_FINDINGS": None,
-              "GITLEAKS_BUILT_FINDINGS": None, "GITLEAKS_SOURCE_FINDINGS": None,
-              "GITLEAKS_INHERITED_FINDINGS": None, "GITLEAKS_NEW_FINDINGS": None,
-              "GITLEAKS_UNKNOWN_FINDINGS": None, "GITLEAKS_INHERITED_CLASS": None,
-              "TRIVY_SECRET_COUNT": None,
-              "TRIVY_HIGH_COUNT": None, "TRIVY_CRITICAL_COUNT": None, "TRIVY_HIGH_CVES": [],
-              "REGISTRY_PUSH": "NOT_RUN", "REGISTRY_TAG": TAG,
-              "REGISTRY_DIGEST": None, "CANONICAL_IMAGE": None,
-              "REGISTRY_POSTCHECK": "NOT_RUN", "CLOUD_RUN_EXISTS": None,
-              "ARTIFACT_REPOSITORY_EXISTS": None, "PACKAGE_EXISTS": None, "TAG_EXISTS": None,
-              "KC00_COMPLETE": "NO", "FAILED_STAGE": None, "ERROR_TYPE": None, "FAIL_CODE": None,
-          }
+          TAG = 'us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/visana-keycloak-dev:8701fc5b377af72665dce210203e43c0433a1fbd'
+          DIGEST = 'sha256:00462375f745a2f05afbc22b337fab23ae7a757846581edbab8f9afc14819b95'
+          CANONICAL = 'us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/visana-keycloak-dev@sha256:00462375f745a2f05afbc22b337fab23ae7a757846581edbab8f9afc14819b95'
+          IMAGE_ID = 'sha256:14d4fd1f19f78e4cccca0e100646cd8bc6b0c7f1b379b47a1f9879ff7c903b34'
+          LAYERS = ['sha256:4d434782b05d2c6b48da5a3af9f5d9435a9fe176bdbc53aec09a58656441f7e4', 'sha256:1dde54818391066dc754422bdf713e4c07e3ddf08ea17602604f67daedc2bf1f', 'sha256:caed84faf81cbf1ac7cdfe03982188d32beda5346482ed7f6ebd9ccd5f9c6646', 'sha256:14b16d26f7a8b53b3c3f5d23a3ee45945617fe0ea75c22ef21358e79a9ee3aac', 'sha256:3a69d67b7b430bbb1bb1ce1098b6475aca860c1ab094c8713bcedb4068364dad', 'sha256:5edf4ff93e3300b60676d54653b2408f6719bc4ebd6523713a2885fc76c95102', 'sha256:ffedadcfb1bcf2b605dab586d93dcd375662a392e62f65b47a9519f31dcc8046']
+          OUT = Path(os.environ["RUNNER_TEMP"]) / "kc00r2-remote-postcheck.json"
+          report = {"READ_ONLY": True, "PUSH_EXECUTED": False, "TAG": TAG, "EXPECTED_DIGEST": DIGEST,
+                    "REGISTRY_DESCRIBE": "NOT_RUN", "REGISTRY_MANIFEST": "NOT_RUN",
+                    "REMOTE_INTEGRITY": "NOT_RUN", "CLOUD_RUN_EXISTS": None,
+                    "DB_EXISTS": "UNKNOWN", "DB_USER_EXISTS": "UNKNOWN",
+                    "RUNTIME_SA_EXISTS": "UNKNOWN", "KEYCLOAK_SECRETS_EXIST": "UNKNOWN",
+                    "POSTCHECK": "INCOMPLETE", "FAILED_STAGE": None}
           stage = "INIT"
 
+          def command(args, timeout=120):
+              p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 timeout=timeout, check=False)
+              if p.returncode:
+                  raise RuntimeError("READ_ONLY_COMMAND_FAILED")
+              return p.stdout.decode(errors="replace")
 
-          class GateFailure(Exception):
-              pass
-
-
-          def require(condition, label):
-              if not condition:
-                  raise GateFailure(label)
-
-
-          def call(args, *, source=None, timeout=180, allowed=(0,)):
-              result = subprocess.run(args, input=source, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE, timeout=timeout, check=False)
-              require(result.returncode in allowed, "CONTROLLED_COMMAND_FAILED")
-              return result.stdout
-
-
-          def json_command(args, timeout=180):
-              data = json.loads(call(args, timeout=timeout))
-              return data
-
-
-          def exception_gate(source):
-              now = datetime.now(timezone.utc)
-              report["NOW_UTC_AT_EXCEPTION_CHECK"] = now.isoformat()
-              require(now < EXPIRES, "SECURITY_EXCEPTION_EXPIRED")
-              document = (source / "docs/00_governance/SECURITY_EXCEPTION_KEYCLOAK_PCRE2_DEV_20261001.md").read_text()
-              markers = (EXCEPTION_ID, "APPROVED_TEMPORARY_DEV_ONLY", "Keycloak DEV", "26.8.0",
-                         BASE_DIGEST, "2026-10-15 16:33 America/Bogota", "NOT_APPROVED",
-                         "RUNTIME_REACHABILITY=NOT_DEMONSTRATED", "36921804827", "36927032965",
-                         "45665d819abdaa00964740df89301894fabe0dc883a3700f092eb23c15d75a4f")
-              require(all(marker in document for marker in markers) and
-                      all(cve in document for cve in HIGH_ALLOWED), "SECURITY_EXCEPTION_SOURCE_MISMATCH")
-              report["SECURITY_EXCEPTION_STATUS"] = "APPROVED_TEMPORARY_DEV_ONLY"
-              report["SECURITY_EXCEPTION_ACTIVE"] = "YES"
-              report["EXCEPTION_SCOPE"] = "DEV_ONLY"
-              report["PRODUCTION_APPLICABILITY"] = "NO"
-              report["RUNTIME_REACHABILITY"] = "NOT_DEMONSTRATED"
-
-
-          def quay_digest():
-              raw = call(["docker", "buildx", "imagetools", "inspect", "quay.io/keycloak/keycloak:26.8.0"],
-                         timeout=180).decode(errors="replace")
-              matched = re.search(r"^Digest:\s+(sha256:[0-9a-f]{64})$", raw, re.M)
-              require(matched is not None and matched.group(1) == BASE_DIGEST, "QUAY_DIGEST_CHANGED")
-              report["QUAY_DIGEST_MATCH"] = "YES"
-
-
-          def vendor_status():
-              statuses = {}
+          def probe(args, predicate):
               try:
-                  for cve in sorted(HIGH_ALLOWED):
-                      address = "https://access.redhat.com/hydra/rest/securitydata/cve/" + cve + ".json"
-                      request = urllib.request.Request(address, headers={
-                          "User-Agent": "Mozilla/5.0", "Accept": "application/json"})
-                      with urllib.request.urlopen(request, timeout=30) as response:
-                          data = json.load(response)
-                      states = sorted({item.get("fix_state") for item in data.get("package_state", [])
-                                       if item.get("product_name") == "Red Hat Enterprise Linux 9"
-                                       and item.get("package_name") == "pcre2"})
-                      releases = [item for item in data.get("affected_release", [])
-                                  if item.get("product_name") == "Red Hat Enterprise Linux 9"
-                                  and str(item.get("package", "")).startswith("pcre2-")]
-                      statuses[cve] = {
-                          "RHEL9_PCRE2_STATES": states,
-                          "FIXED_PACKAGES": sorted({str(item.get("package")) for item in releases}),
-                          "ADVISORIES": sorted({str(item.get("advisory")) for item in releases
-                                                if item.get("advisory")}),
-                          "SOURCE": address,
-                      }
-              except Exception as failure:
-                  report["RED_HAT_STATUS"] = statuses
-                  report["VENDOR_STATUS"] = "UNKNOWN"
-                  report["VENDOR_ERROR_TYPE"] = type(failure).__name__
-                  raise GateFailure("VENDOR_STATUS_UNKNOWN") from failure
-              report["RED_HAT_STATUS"] = statuses
-              fixed = any(item["FIXED_PACKAGES"] or item["ADVISORIES"] or
-                          "Fixed" in item["RHEL9_PCRE2_STATES"] for item in statuses.values())
-              report["VENDOR_FIX_AVAILABLE"] = "YES" if fixed else "NO"
-              if fixed:
-                  report["VENDOR_STATUS"] = "FIX_AVAILABLE"
-                  report["SECURITY_EXCEPTION_STATUS"] = "INVALIDATED_VENDOR_FIX"
-                  report["SECURITY_EXCEPTION_ACTIVE"] = "NO"
-                  raise GateFailure("VENDOR_FIX_AVAILABLE")
-              require(len(statuses) == 3 and all(item["RHEL9_PCRE2_STATES"] == ["Affected"]
-                                                 for item in statuses.values()), "VENDOR_STATUS_UNKNOWN")
-              report["VENDOR_STATUS"] = "AFFECTED_NO_RHEL9_FIX"
-
-
-          def github_pr():
-              request = urllib.request.Request(
-                  "https://api.github.com/repos/Visanaz/visana/pulls/20",
-                  headers={"User-Agent": "visana-kc00r2-source-guard", "Accept": "application/vnd.github+json"},
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  pr = json.load(response)
-              require(pr.get("state") == "open" and pr.get("draft") is True and pr.get("merged_at") is None,
-                      "PR_STATE_CHANGED")
-              require(pr.get("base", {}).get("ref") == "dev" and
-                      pr.get("head", {}).get("sha") == SOURCE, "PR_HEAD_CHANGED")
-
-
-          def gcp_inventory(expect_empty=True):
-              project = call(["gcloud", "config", "get-value", "project"], timeout=60).decode().strip()
-              require(project == PROJECT, "GCP_PROJECT_MISMATCH")
-              active = call(["gcloud", "auth", "list", "--filter=status:ACTIVE",
-                             "--format=value(account)"], timeout=60).decode().strip()
-              require(active == "github-actions-dev@visana-erp-dev.iam.gserviceaccount.com",
-                      "GCP_IDENTITY_MISMATCH")
-              report["ACTIVE_GCP_IDENTITY"] = active
-              repository = json_command(["gcloud", "artifacts", "repositories", "describe", REPO,
-                                         "--location=" + REGION, "--project=" + PROJECT, "--format=json"])
-              require(repository.get("name", "").endswith("/repositories/" + REPO),
-                      "ARTIFACT_REPOSITORY_NOT_FOUND")
-              report["ARTIFACT_REPOSITORY_EXISTS"] = True
-              services = json_command(["gcloud", "run", "services", "list", "--region=" + REGION,
-                                       "--project=" + PROJECT, "--format=json"])
-              require(isinstance(services, list), "CLOUD_RUN_LIST_INVALID")
-              exists = any((item.get("metadata", {}).get("name") == PACKAGE or
-                            item.get("name", "").endswith("/services/" + PACKAGE)) for item in services)
-              report["CLOUD_RUN_EXISTS"] = exists
-              require(not exists, "KEYCLOAK_CLOUD_RUN_EXISTS")
-              packages = json_command(["gcloud", "artifacts", "packages", "list",
-                                       "--repository=" + REPO, "--location=" + REGION,
-                                       "--project=" + PROJECT, "--format=json"])
-              require(isinstance(packages, list), "ARTIFACT_PACKAGE_LIST_INVALID")
-              present = any(item.get("name", "").endswith("/packages/" + PACKAGE) for item in packages)
-              report["PACKAGE_EXISTS"] = present
-              if not present:
-                  report["TAG_EXISTS"] = False
-                  report["TAG_ABSENCE_BASIS"] = "PACKAGE_NOT_FOUND"
-              require(present != expect_empty, "KEYCLOAK_PACKAGE_CONFLICT" if present else "KEYCLOAK_PACKAGE_MISSING")
-              return present
-
-
-          def download_binary(root, name, url, expected_sha):
-              archive = root / (name + ".tar.gz")
-              urllib.request.urlretrieve(url, archive)
-              require(hashlib.sha256(archive.read_bytes()).hexdigest() == expected_sha,
-                      "SCANNER_ARCHIVE_HASH_MISMATCH")
-              with tarfile.open(archive) as tf:
-                  member = next((entry for entry in tf.getmembers()
-                                 if entry.name.removeprefix("./") == name and entry.isfile()), None)
-                  require(member is not None, "SCANNER_BINARY_MISSING")
-                  binary = root / name
-                  binary.write_bytes(tf.extractfile(member).read())
-                  binary.chmod(0o700)
-              archive.unlink()
-              return str(binary)
-
-
-          def file_sha(path):
-              digest = hashlib.sha256()
-              with path.open("rb") as stream:
-                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                      digest.update(chunk)
-              return digest.hexdigest()
-
-
-          def trivy_database(binary, root):
-              cache = root / "trivy-cache"
-              call([binary, "image", "--download-db-only", "--cache-dir", str(cache), "--quiet"], timeout=600)
-              call([binary, "image", "--download-java-db-only", "--cache-dir", str(cache), "--quiet"], timeout=600)
-              db, metadata = cache / "db/trivy.db", cache / "db/metadata.json"
-              require(db.is_file() and metadata.is_file(), "TRIVY_DB_MISSING")
-              meta = json.loads(metadata.read_text())
-              require(isinstance(meta.get("UpdatedAt"), str) and meta["UpdatedAt"],
-                      "TRIVY_DB_TIMESTAMP_MISSING")
-              report["TRIVY_DB_UPDATED_AT"] = meta["UpdatedAt"]
-              report["TRIVY_DB_DOWNLOADED_AT"] = meta.get("DownloadedAt")
-              report["TRIVY_DB_SHA256"] = file_sha(db)
-              return cache
-
-
-          def export_layers(ref, inspect, root, label):
-              archive = root / (label + "-transport.tar")
-              output = root / label
-              layers_dir = output / "layers"
-              layers_dir.mkdir(parents=True)
-              call(["docker", "image", "save", "--output", str(archive), ref], timeout=900)
-              diff_ids = inspect["RootFS"]["Layers"]
-              with tarfile.open(archive) as tf:
-                  manifest = json.load(tf.extractfile("manifest.json"))
-                  require(len(manifest) == 1 and len(manifest[0]["Layers"]) == len(diff_ids),
-                          "IMAGE_LAYER_MANIFEST_MISMATCH")
-                  for member_name, diff_id in zip(manifest[0]["Layers"], diff_ids):
-                      require(re.fullmatch(r"sha256:[0-9a-f]{64}", diff_id), "INVALID_DIFF_ID")
-                      target = layers_dir / (diff_id.replace(":", "-") + ".tar")
-                      with tf.extractfile(member_name) as source, target.open("wb") as dest:
-                          magic = source.read(2)
-                          source.seek(0)
-                          if magic == b"\x1f\x8b":
-                              with gzip.GzipFile(fileobj=source) as decoded:
-                                  shutil.copyfileobj(decoded, dest)
-                          else:
-                              shutil.copyfileobj(source, dest)
-                      hasher = hashlib.sha256()
-                      with target.open("rb") as stream:
-                          for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                              hasher.update(chunk)
-                      require("sha256:" + hasher.hexdigest() == diff_id, "LAYER_DIFF_ID_MISMATCH")
-              archive.unlink()
-              (output / "config.json").write_text(json.dumps(inspect["Config"]))
-              history = call(["docker", "history", "--no-trunc", "--format", "{{json .}}", ref], timeout=180)
-              (output / "history.jsonl").write_bytes(history)
-              return output
-
-
-          def scan_gitleaks(binary, target, root):
-              result = subprocess.run([binary, "dir", str(target), "--max-archive-depth=3",
-                                       "--redact=100", "--report-format=json", "--report-path=-",
-                                       "--no-banner", "--log-level=error"], cwd=root,
-                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                      timeout=900, check=False)
-              require(result.returncode in (0, 1), "GITLEAKS_SCAN_FAILED")
-              data = json.loads(result.stdout)
-              require(isinstance(data, list), "GITLEAKS_REPORT_INVALID")
-              signatures = set()
-              prefix = str(target).replace("\\", "/").rstrip("/") + "/"
-              for item in data:
-                  require(all(key in item for key in ("RuleID", "File", "StartLine", "EndLine")),
-                          "GITLEAKS_REPORT_INVALID")
-                  path = str(item["File"]).replace("\\", "/")
-                  if path.startswith(prefix):
-                      path = path[len(prefix):]
-                  elif path.startswith("/") or ".." in path.split("/"):
-                      raise GateFailure("GITLEAKS_PATH_UNKNOWN")
-                  path = path.removeprefix("./")
-                  signatures.add((str(item["RuleID"]), path,
-                                  int(item["StartLine"]), int(item["EndLine"])))
-              require((result.returncode == 1) == bool(signatures), "GITLEAKS_EXIT_REPORT_MISMATCH")
-              return signatures
-
-
-          def scan_trivy(binary, ref, root):
-              cache = root / "trivy-cache"
-              require(file_sha(cache / "db/trivy.db") == report["TRIVY_DB_SHA256"], "TRIVY_DB_CHANGED")
-              result = subprocess.run([binary, "image", "--scanners", "vuln,secret",
-                                     "--severity", "HIGH,CRITICAL", "--format", "json", "--quiet",
-                                     "--exit-code", "1", "--timeout", "10m", "--image-src", "docker",
-                                     "--skip-db-update", "--skip-java-db-update", "--skip-check-update",
-                                     "--cache-dir", str(cache), ref], stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE, timeout=660, check=False)
-              require(result.returncode in (0, 1), "TRIVY_SCAN_FAILED")
-              data = json.loads(result.stdout)
-              require(isinstance(data, dict) and isinstance(data.get("Results"), list),
-                      "TRIVY_REPORT_INVALID")
-              findings = [v for item in data["Results"] for v in item.get("Vulnerabilities", [])]
-              high = [v for v in findings if v.get("Severity") == "HIGH"]
-              critical = [v for v in findings if v.get("Severity") == "CRITICAL"]
-              result_secrets = subprocess.run([binary, "image", "--scanners", "secret",
-                                               "--format", "json", "--quiet", "--exit-code", "1",
-                                               "--timeout", "10m", "--image-src", "docker",
-                                               "--skip-check-update", "--cache-dir", str(cache), ref],
-                                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                              timeout=660, check=False)
-              require(result_secrets.returncode in (0, 1), "TRIVY_SECRET_SCAN_FAILED")
-              secret_data = json.loads(result_secrets.stdout)
-              require(isinstance(secret_data, dict) and isinstance(secret_data.get("Results"), list),
-                      "TRIVY_SECRET_REPORT_INVALID")
-              secrets = sum(len(item.get("Secrets", [])) for item in secret_data["Results"])
-              require(file_sha(cache / "db/trivy.db") == report["TRIVY_DB_SHA256"], "TRIVY_DB_CHANGED")
-              return secrets, len(high), len(critical), sorted({v["VulnerabilityID"] for v in high})
-
-
-          def inspect_image(ref):
-              data = json_command(["docker", "image", "inspect", ref], timeout=180)
-              require(isinstance(data, list) and len(data) == 1, "IMAGE_INSPECT_INVALID")
-              return data[0]
-
-
-          def main():
-              global stage
-              source = Path("approved-source").resolve()
-              stage = "SOURCE_INTEGRITY"
-              require(call(["git", "-C", str(source), "rev-parse", "HEAD"]).decode().strip() == SOURCE,
-                      "SOURCE_SHA_MISMATCH")
-              for path, blob in EXPECTED_BLOBS.items():
-                  require(call(["git", "-C", str(source), "hash-object", path]).decode().strip() == blob,
-                          "SOURCE_BLOB_MISMATCH")
-              dockerfile = (source / "infra/keycloak/Dockerfile").read_text()
-              from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM ")]
-              require(len(from_lines) == 2 and all(line.split()[1] == BASE for line in from_lines),
-                      "KEYCLOAK_BASE_MISMATCH")
-              report["SOURCE_INTEGRITY"] = "PASS"
-
-              stage = "EXCEPTION_PRECHECK"
-              exception_gate(source)
-              stage = "QUAY_PRECHECK"
-              quay_digest()
-              stage = "VENDOR_PRECHECK"
-              vendor_status()
-
-              stage = "GCP_PREFLIGHT"
-              github_pr()
-              gcp_inventory(expect_empty=True)
-
-              with tempfile.TemporaryDirectory(prefix="kc00r2-", dir=os.environ["RUNNER_TEMP"]) as temp:
-                  root = Path(temp)
-                  stage = "SCANNER_SETUP"
-                  gl = download_binary(root, "gitleaks", GITLEAKS_URL, GITLEAKS_SHA)
-                  trivy = download_binary(root, "trivy", TRIVY_URL, TRIVY_SHA)
-                  stage = "TRIVY_DB_REFRESH"
-                  trivy_database(trivy, root)
-                  stage = "BUILD"
-                  call(["docker", "pull", "--platform=linux/amd64", BASE], timeout=900)
-                  call(["docker", "build", "--platform=linux/amd64", "--pull",
-                        "--label", "org.opencontainers.image.revision=" + SOURCE,
-                        "--label", "org.opencontainers.image.source=https://github.com/Visanaz/visana",
-                        "--tag", TAG, "--file", str(source / "infra/keycloak/Dockerfile"),
-                        str(source / "infra/keycloak")], timeout=1200)
-                  base = inspect_image(BASE)
-                  built = inspect_image(TAG)
-                  for image in (base, built):
-                      require(image["Os"] == "linux" and image["Architecture"] == "amd64",
-                              "IMAGE_PLATFORM_MISMATCH")
-                      require(not any(re.search(r"PASSWORD|TOKEN|PRIVATE_KEY|CREDENTIALS|CLIENT_SECRET",
-                                                value.split("=", 1)[0], re.I)
-                                      for value in image["Config"].get("Env", [])),
-                              "SENSITIVE_ENV_KEY_PRESENT")
-                  labels = built["Config"].get("Labels") or {}
-                  require(labels.get("org.opencontainers.image.revision") == SOURCE and
-                          labels.get("org.opencontainers.image.source") == "https://github.com/Visanaz/visana",
-                          "IMAGE_LABEL_MISMATCH")
-                  report["BUILD_STATUS"] = "PASS"
-                  report["LOCAL_IMAGE_ID"] = built["Id"]
-                  report["ROOTFS_DIFF_IDS"] = built["RootFS"]["Layers"]
-
-                  stage = "GITLEAKS"
-                  base_dir = export_layers(BASE, base, root, "base")
-                  built_dir = export_layers(TAG, built, root, "built")
-                  source_dir = root / "source"
-                  shutil.copytree(source, source_dir,
-                                  ignore=shutil.ignore_patterns(".git", "target", "__pycache__"))
-                  base_findings = scan_gitleaks(gl, base_dir, root)
-                  built_findings = scan_gitleaks(gl, built_dir, root)
-                  source_findings = scan_gitleaks(gl, source_dir, root)
-                  inherited = base_findings & built_findings
-                  new = built_findings - base_findings
-                  unknown = (base_findings | built_findings) - {KNOWN_FINDING}
-                  report["GITLEAKS_SIGNATURES_SANITIZED"] = {
-                      "base": sorted([{"rule": rule, "path": path, "start": start, "end": end}
-                                      for rule, path, start, end in base_findings], key=lambda x: (x["path"], x["start"])),
-                      "built": sorted([{"rule": rule, "path": path, "start": start, "end": end}
-                                       for rule, path, start, end in built_findings], key=lambda x: (x["path"], x["start"])),
-                  }
-                  report.update({
-                      "GITLEAKS_BASE_FINDINGS": len(base_findings),
-                      "GITLEAKS_BUILT_FINDINGS": len(built_findings),
-                      "GITLEAKS_SOURCE_FINDINGS": len(source_findings),
-                      "GITLEAKS_INHERITED_FINDINGS": len(inherited),
-                      "GITLEAKS_NEW_FINDINGS": len(new),
-                      "GITLEAKS_UNKNOWN_FINDINGS": len(unknown),
-                      "GITLEAKS_INHERITED_CLASS": ("UNCLASSIFIED_INHERITED_FINDING" if unknown else
-                                                    "KNOWN_INHERITED_BASE_FINDING" if inherited else "NONE"),
-                  })
-                  require(not source_findings and not new and not unknown and
-                          base_findings == built_findings and
-                          (not base_findings or base_findings == {KNOWN_FINDING}),
-                          "GITLEAKS_GATE_FAILED")
-                  if inherited:
-                      known_diff_id = "sha256:1dde54818391066dc754422bdf713e4c07e3ddf08ea17602604f67daedc2bf1f"
-                      require(known_diff_id in base["RootFS"]["Layers"] and
-                              known_diff_id in built["RootFS"]["Layers"], "INHERITED_LAYER_MISMATCH")
-
-                  stage = "TRIVY"
-                  secret_count, high_count, critical_count, high_cves = scan_trivy(trivy, TAG, root)
-                  report.update({"TRIVY_SECRET_COUNT": secret_count,
-                                 "TRIVY_HIGH_COUNT": high_count,
-                                 "TRIVY_CRITICAL_COUNT": critical_count,
-                                 "TRIVY_HIGH_CVES": high_cves})
-                  require(secret_count == 0 and critical_count == 0 and
-                          set(high_cves) <= HIGH_ALLOWED, "TRIVY_GATE_FAILED")
-
-                  stage = "PRE_PUSH_RECHECK"
-                  exception_gate(source)
-                  quay_digest()
-                  vendor_status()
-                  github_pr()
-                  gcp_inventory(expect_empty=True)
-                  require(report["TRIVY_SECRET_COUNT"] == 0 and report["TRIVY_CRITICAL_COUNT"] == 0
-                          and set(report["TRIVY_HIGH_CVES"]) <= HIGH_ALLOWED and
-                          report["GITLEAKS_NEW_FINDINGS"] == 0 and
-                          report["GITLEAKS_UNKNOWN_FINDINGS"] == 0 and
-                          report["RUNTIME_REACHABILITY"] == "NOT_DEMONSTRATED", "PRE_PUSH_SECURITY_GATE_CHANGED")
-                  for path, blob in EXPECTED_BLOBS.items():
-                      require(call(["git", "-C", str(source), "hash-object", path]).decode().strip() == blob,
-                              "SOURCE_CHANGED_BEFORE_PUSH")
-
-                  stage = "REGISTRY_LOGIN"
-                  token = call(["gcloud", "auth", "print-access-token"], timeout=60).strip()
-                  require(bool(token), "GCP_ACCESS_TOKEN_MISSING")
-                  call(["docker", "login", "-u", "oauth2accesstoken", "--password-stdin",
-                        REGION + "-docker.pkg.dev"], source=token + b"\n", timeout=120)
-                  del token
-
-                  stage = "REGISTRY_PUSH"
-                  pushed = call(["docker", "push", TAG], timeout=1200).decode(errors="replace")
-                  matches = re.findall(r"digest:\s*(sha256:[0-9a-f]{64})", pushed)
-                  require(len(matches) == 1, "PUSH_DIGEST_MISSING")
-                  digest = matches[0]
-                  canonical = IMAGE + "@" + digest
-                  report["REGISTRY_PUSH"] = "PASS"
-                  report["REGISTRY_DIGEST"] = digest
-                  report["CANONICAL_IMAGE"] = canonical
-
-                  stage = "REGISTRY_POSTCHECK"
-                  gcp_inventory(expect_empty=False)
-                  tag_manifest = call(["docker", "buildx", "imagetools", "inspect", TAG], timeout=180).decode()
-                  require(re.search(r"^Digest:\s*" + re.escape(digest) + r"\s*$", tag_manifest, re.M),
-                          "REGISTRY_TAG_DIGEST_MISMATCH")
-                  call(["docker", "pull", "--platform=linux/amd64", canonical], timeout=900)
-                  remote = inspect_image(canonical)
-                  require(remote["Os"] == built["Os"] and remote["Architecture"] == built["Architecture"] and
-                          remote["Id"] == built["Id"] and
-                          remote["RootFS"]["Layers"] == built["RootFS"]["Layers"] and
-                          remote["Config"].get("Labels") == built["Config"].get("Labels") and
-                          remote["Config"].get("Env") == built["Config"].get("Env"),
-                          "REMOTE_IMAGE_INTEGRITY_MISMATCH")
-                  require(canonical in remote.get("RepoDigests", []), "REMOTE_REPO_DIGEST_MISSING")
-                  report["REGISTRY_POSTCHECK"] = "PASS"
-                  report["TAG_EXISTS"] = True
-                  report["KC00R2_STATUS"] = "PASS"
-                  report["KC00_COMPLETE"] = "YES"
-
+                  data = json.loads(command(args))
+                  return bool(predicate(data))
+              except Exception:
+                  return "UNKNOWN"
 
           try:
-              main()
-          except Exception as error:
+              stage = "IDENTITY"
+              account = command(["gcloud", "auth", "list", "--filter=status:ACTIVE", "--format=value(account)"]).strip()
+              project = command(["gcloud", "config", "get-value", "project"]).strip()
+              assert account == "github-actions-dev@visana-erp-dev.iam.gserviceaccount.com" and project == "visana-erp-dev"
+              report["ACTIVE_GCP_IDENTITY"] = account
+              stage = "REGISTRY_DESCRIBE"
+              described = json.loads(command(["gcloud", "artifacts", "docker", "images", "describe", TAG, "--format=json"]))
+              assert isinstance(described, dict) and described
+              report["REGISTRY_DESCRIBE"] = "PASS"
+              report["PACKAGE_EXISTS"] = probe(["gcloud", "artifacts", "packages", "describe", "visana-keycloak-dev",
+                                                "--repository=visana-repo", "--location=us-central1",
+                                                "--project=visana-erp-dev", "--format=json"], lambda d: bool(d))
+              stage = "REGISTRY_MANIFEST"
+              token = command(["gcloud", "auth", "print-access-token"]).strip()
+              assert token
+              login = subprocess.run(["docker", "login", "-u", "oauth2accesstoken", "--password-stdin",
+                                      "us-central1-docker.pkg.dev"], input=(token + "\n").encode(),
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+              del token
+              assert login.returncode == 0
+              manifest = command(["docker", "buildx", "imagetools", "inspect", TAG], timeout=180)
+              assert re.search(r"^Digest:\s*" + re.escape(DIGEST) + r"\s*$", manifest, re.M)
+              report["REGISTRY_MANIFEST"] = "PASS"
+              report["TAG_EXISTS"] = True
+              stage = "REMOTE_INTEGRITY"
+              command(["docker", "pull", "--platform=linux/amd64", CANONICAL], timeout=900)
+              images = json.loads(command(["docker", "image", "inspect", CANONICAL]))
+              assert len(images) == 1
+              image = images[0]
+              assert image["Os"] == "linux" and image["Architecture"] == "amd64"
+              assert image["Id"] == IMAGE_ID and image["RootFS"]["Layers"] == LAYERS
+              labels = image["Config"].get("Labels") or {}
+              assert labels.get("org.opencontainers.image.revision") == "8701fc5b377af72665dce210203e43c0433a1fbd"
+              assert labels.get("org.opencontainers.image.source") == "https://github.com/Visanaz/visana"
+              assert CANONICAL in image.get("RepoDigests", [])
+              report["REMOTE_INTEGRITY"] = "PASS"
+              report["REMOTE_IMAGE_ID"] = image["Id"]
+              stage = "CLOUD_INVENTORY"
+              services = json.loads(command(["gcloud", "run", "services", "list", "--region=us-central1",
+                                             "--project=visana-erp-dev", "--format=json"]))
+              assert isinstance(services, list)
+              report["CLOUD_RUN_EXISTS"] = any(x.get("metadata", {}).get("name") == "visana-keycloak-dev" or
+                                                x.get("name", "").endswith("/services/visana-keycloak-dev") for x in services)
+              assert report["CLOUD_RUN_EXISTS"] is False
+              report["DB_EXISTS"] = probe(["gcloud", "sql", "databases", "list", "--instance=visana-db-dev",
+                                           "--project=visana-erp-dev", "--format=json"],
+                                          lambda d: any(x.get("name") == "keycloak_dev" for x in d))
+              report["DB_USER_EXISTS"] = probe(["gcloud", "sql", "users", "list", "--instance=visana-db-dev",
+                                                "--project=visana-erp-dev", "--format=json"],
+                                               lambda d: any(x.get("name") == "keycloak_app_dev" for x in d))
+              report["RUNTIME_SA_EXISTS"] = probe(["gcloud", "iam", "service-accounts", "list",
+                                                   "--project=visana-erp-dev", "--format=json"],
+                                                  lambda d: any(x.get("email") == "visana-keycloak-dev@visana-erp-dev.iam.gserviceaccount.com" for x in d))
+              report["KEYCLOAK_SECRETS_EXIST"] = probe(["gcloud", "secrets", "list", "--project=visana-erp-dev",
+                                                         "--format=json"],
+                                                        lambda d: any(any(name in x.get("name", "") for name in
+                                                            ["visana-dev-keycloak-db-password", "visana-dev-keycloak-bootstrap-password",
+                                                             "visana-dev-keycloak-health-client-secret"]) for x in d))
+              report["POSTCHECK"] = "PASS" if all(report[k] is False for k in
+                  ["CLOUD_RUN_EXISTS", "DB_EXISTS", "DB_USER_EXISTS", "RUNTIME_SA_EXISTS", "KEYCLOAK_SECRETS_EXIST"]) else "PARTIAL"
+          except Exception as exc:
               report["FAILED_STAGE"] = stage
-              report["ERROR_TYPE"] = type(error).__name__
-              report["FAIL_CODE"] = str(error) if isinstance(error, GateFailure) else type(error).__name__
-              if stage == "GCP_PREFLIGHT" and isinstance(error, GateFailure):
-                  report["KC00R2_STATUS"] = "PRECHECK_FAILED"
-              elif stage == "PRE_PUSH_RECHECK" and isinstance(error, GateFailure):
-                  report["KC00R2_STATUS"] = "CONFLICT"
-              else:
-                  report["KC00R2_STATUS"] = "FAIL"
+              report["ERROR_TYPE"] = type(exc).__name__
+              report["POSTCHECK"] = "FAIL"
           finally:
-              REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-              print("KC00R2_STATUS=" + report["KC00R2_STATUS"])
+              OUT.write_text(json.dumps(report, indent=2) + "\n")
+              print("POSTCHECK=" + report["POSTCHECK"])
               print("FAILED_STAGE=" + str(report["FAILED_STAGE"]))
-              print("SANITIZED_ARTIFACT=" + REPORT_PATH.name)
-          if report["KC00R2_STATUS"] != "PASS":
+          if report["POSTCHECK"] == "FAIL":
               raise SystemExit(1)
 
-      - name: Upload only sanitized KC-00R2 evidence
+      - name: Upload sanitized read-only postcheck
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: kc00r2-publish-result
-          path: ${{ runner.temp }}/kc00r2-publish-result.json
+          name: kc00r2-remote-postcheck
+          path: ${{ runner.temp }}/kc00r2-remote-postcheck.json
           if-no-files-found: ignore
           retention-days: 14
