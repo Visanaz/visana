@@ -240,7 +240,8 @@ jobs:
                                            "primaryURL": v.get("PrimaryURL")})
               secrets = sum(len(x.get("Secrets", [])) for x in data["Results"])
               assert_db(cache, expected_db)
-              return {"SECRET_COUNT": secrets,
+              return {"OS": data.get("Metadata", {}).get("OS"),
+                      "SECRET_COUNT": secrets,
                       "HIGH_COUNT": sum(v["severity"] == "HIGH" for v in findings),
                       "CRITICAL_COUNT": sum(v["severity"] == "CRITICAL" for v in findings),
                       "FINDINGS": sorted(findings, key=lambda v: (str(v["CVE"]), str(v["package"]), str(v["installedVersion"])))}
@@ -397,11 +398,9 @@ jobs:
                       report["BUILD_" + version] = "PASS"
                       report["IMAGE_ID_" + version] = image_id(tag)["Id"]
                   stage = "OS_PACKAGE_INSPECTION"
-                  report["KEYCLOAK_BASE_OS"] = {}
                   report["PCRE2_PACKAGES"] = {}
                   for version in ("2675", "2680"):
                       base = refs["BASE_" + version]
-                      report["KEYCLOAK_BASE_OS"][version] = os_release(base, temp, version)
                       report["PCRE2_PACKAGES"][version] = pcre2_packages(trivy, cache, db_hashes, base)
                       for package in ("pcre2", "pcre2-syntax"):
                           matches = [item[1] for item in report["PCRE2_PACKAGES"][version] if item[0] == package]
@@ -411,6 +410,8 @@ jobs:
                   scans = {}
                   for label, ref in refs.items():
                       scans[label] = trivy_scan(trivy, cache, db_hashes, ref)
+                  report["KEYCLOAK_BASE_OS"] = {version: scans["BASE_" + version]["OS"]
+                                                  for version in ("2675", "2680")}
                   report["TRIVY_SCANS"] = scans
                   report["TRIVY_2675_HIGH"] = scans["BUILT_2675"]["HIGH_COUNT"]
                   report["TRIVY_2675_CRITICAL"] = scans["BUILT_2675"]["CRITICAL_COUNT"]
@@ -510,6 +511,8 @@ jobs:
               OUT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
               print("KC00H_STATUS=" + report["KC00H_STATUS"])
               print("KC00H_FAILED_STAGE=" + str(report["FAILED_STAGE"]))
+          if report["KC00H_STATUS"] == "FAILED":
+              raise SystemExit(1)
           PY
           python3 "$RUNNER_TEMP/kc00h.py"
       - name: Upload sanitized evidence only
