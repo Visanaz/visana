@@ -24,6 +24,7 @@ jobs:
           persist-credentials: false
 
       - name: Diagnose the isolated SQL proof
+        if: false
         shell: bash
         run: |
           cat > "$RUNNER_TEMP/sql-proof-diagnostic.py" <<'PY'
@@ -377,10 +378,233 @@ jobs:
           python3 -B "$RUNNER_TEMP/sql-proof-diagnostic.py"
 
       - name: Upload sanitized diagnostic report only
-        if: always()
+        if: false
         uses: actions/upload-artifact@v4
         with:
           name: sql-proof-diagnostic
           path: ${{ runner.temp }}/sql-proof-diagnostic.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Inspect pinned entrypoint and run TCP-stable A/B proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          image='postgres:18.3-alpine@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7'
+          test "$(git rev-parse HEAD)" = 'b677091a123c578082a1746350619b8033f2278c'
+          docker pull "$image" >/dev/null
+          docker run --rm --network none --entrypoint cat "$image" /usr/local/bin/docker-entrypoint.sh > "$RUNNER_TEMP/postgres-entrypoint.sh"
+          cat > "$RUNNER_TEMP/sql_proof_stability_preflight.py" <<'PY'
+          """Temporary A/B proof outside Git. Uses only disposable networkless containers."""
+
+          import argparse
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import secrets
+          import subprocess
+          import time
+          import uuid
+
+
+          IMAGE = "postgres:18.3-alpine@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7"
+          SCRIPT_BLOB = "1f291b9291028b934c6cf5f57e1aabbafeeb27b1"
+
+
+          def redact(value, password):
+              if isinstance(value, bytes):
+                  value = value.decode("utf-8", errors="replace")
+              return value.replace(password, "[REDACTED_SYNTHETIC_PASSWORD]")
+
+
+          def fail(stage, result, password):
+              stderr = redact(result.stderr, password)
+              tail = "\n".join(stderr.splitlines()[-20:]).encode("utf-8")[-4096:].decode("utf-8", errors="replace")
+              raise RuntimeError(json.dumps({"failed_stage": stage, "return_code": result.returncode,
+                                             "sanitized_stderr_tail": tail}))
+
+
+          def call(args, *, source=None, environment=None):
+              return subprocess.run(args, input=source, env=environment,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+
+          def psql(name, source, *, user="postgres", database="visana_dev"):
+              command = ["docker", "exec", "-i", name, "sh", "-c",
+                         'PGPASSWORD="$POSTGRES_PASSWORD" exec psql "$@"', "sh",
+                         "-X", "-v", "ON_ERROR_STOP=1", "-U", user, "-d", database, "-At",
+                         "-h", "127.0.0.1", "-p", "5432"]
+              return call(command, source=source.encode())
+
+
+          def ready(name, password):
+              deadline = time.monotonic() + 90
+              began = time.monotonic()
+              tcp_attempts = sql_attempts = stable = 0
+              socket_only_seen = False
+              while time.monotonic() < deadline:
+                  state = call(["docker", "inspect", "--format", "{{.State.Running}}", name])
+                  if state.returncode or state.stdout.strip() != b"true":
+                      fail("READY_CONTAINER_STATE", state, password)
+                  socket = call(["docker", "exec", name, "pg_isready", "-U", "postgres"])
+                  tcp = call(["docker", "exec", name, "pg_isready", "-h", "127.0.0.1",
+                              "-p", "5432", "-U", "postgres", "-d", "postgres"])
+                  tcp_attempts += 1
+                  if socket.returncode == 0 and tcp.returncode != 0:
+                      socket_only_seen = True
+                  if tcp.returncode == 0:
+                      query = psql(name, "SELECT 1", database="postgres")
+                      sql_attempts += 1
+                      if query.returncode == 0 and query.stdout.strip() == b"1":
+                          stable += 1
+                          if stable == 2:
+                              return {"READY_TCP_ATTEMPTS": tcp_attempts,
+                                      "READY_SQL_ATTEMPTS": sql_attempts,
+                                      "READY_STABLE_SUCCESSES": stable,
+                                      "READY_DURATION_MS": round((time.monotonic() - began) * 1000),
+                                      "SOCKET_READY_WHILE_TCP_NOT_READY": socket_only_seen}
+                          time.sleep(0.26)
+                          continue
+                  stable = 0
+                  time.sleep(0.10)
+              raise RuntimeError(json.dumps({"failed_stage": "READY_TIMEOUT",
+                                             "READY_TCP_ATTEMPTS": tcp_attempts,
+                                             "READY_SQL_ATTEMPTS": sql_attempts,
+                                             "SOCKET_READY_WHILE_TCP_NOT_READY": socket_only_seen}))
+
+
+          def proof(root, number):
+              name = "visana-sql-stability-" + uuid.uuid4().hex[:10]
+              password = secrets.token_urlsafe(32)
+              environment = dict(os.environ, POSTGRES_PASSWORD=password)
+              report = {"proof": number, "image": IMAGE, "migrations": {}}
+
+              def sql(stage, source, *, user="postgres", database="visana_dev"):
+                  result = psql(name, source, user=user, database=database)
+                  if result.returncode:
+                      fail(stage, result, password)
+                  return result.stdout.decode()
+
+              try:
+                  started = call(["docker", "run", "-d", "--rm", "--name", name,
+                                  "--network", "none", "--env", "POSTGRES_PASSWORD", IMAGE],
+                                 environment=environment)
+                  if started.returncode:
+                      fail("CONTAINER_START", started, password)
+                  report.update(ready(name, password))
+                  sql("FIXTURE_CREATE", "CREATE ROLE cloudsqlsuperuser; CREATE ROLE visana_app_dev LOGIN CREATEDB CREATEROLE;"
+                      " GRANT cloudsqlsuperuser TO visana_app_dev; CREATE DATABASE visana_dev OWNER cloudsqlsuperuser;",
+                      database="postgres")
+                  rights = "SELECT json_build_object('createdb',r.rolcreatedb,'createrole',r.rolcreaterole," \
+                           "'administrative_member',pg_has_role('visana_app_dev','cloudsqlsuperuser','MEMBER')," \
+                           "'connect',has_database_privilege('visana_app_dev','visana_dev','CONNECT')," \
+                           "'usage',has_schema_privilege('visana_app_dev','public','USAGE')," \
+                           "'create',has_schema_privilege('visana_app_dev','public','CREATE'))" \
+                           " FROM pg_roles r WHERE r.rolname='visana_app_dev';"
+                  before = json.loads(sql("BEFORE_RIGHTS", rights))
+                  if not all(before.values()):
+                      raise RuntimeError("BEFORE_RIGHTS assertion failed")
+                  proposal = (root / "scripts/ci/visana_dev_privileges_proposal.sql").read_text()
+                  wrong = psql(name, proposal, database="postgres")
+                  if wrong.returncode == 0:
+                      raise RuntimeError("WRONG_DATABASE_GUARD did not fail")
+                  sql("APPLY_PROPOSAL", proposal)
+                  after = json.loads(sql("AFTER_RIGHTS", rights, user="visana_app_dev"))
+                  if any(after[key] for key in ("createdb", "createrole", "administrative_member")) or not all(
+                          after[key] for key in ("connect", "usage", "create")):
+                      raise RuntimeError("AFTER_RIGHTS assertion failed")
+                  migrations = sorted((root / "src/main/resources/db/migration").glob("V*.sql"))
+                  if len(migrations) != 8:
+                      raise RuntimeError("Expected exactly V1-V8")
+                  for index, migration in enumerate(migrations, 1):
+                      sql(f"MIGRATION_V{index}", migration.read_text(), user="visana_app_dev")
+                      report["migrations"][f"V{index}"] = "PASS"
+                  objects = json.loads(sql("OBJECT_OWNERSHIP", "SELECT json_build_object('tables',count(*),'owned_by_app',"
+                                           "bool_and(pg_get_userbyid(c.relowner)='visana_app_dev'))"
+                                           " FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid"
+                                           " WHERE n.nspname='public' AND c.relkind IN ('r','p');"))
+                  if objects["tables"] == 0 or not objects["owned_by_app"]:
+                      raise RuntimeError("OBJECT_OWNERSHIP assertion failed")
+                  report.update({"result": "PASS", "before": before, "after": after, "objects": objects})
+                  return report
+              finally:
+                  call(["docker", "rm", "--force", name])
+
+
+          def main():
+              parser = argparse.ArgumentParser()
+              parser.add_argument("--root", type=Path, required=True)
+              parser.add_argument("--output", type=Path, required=True)
+              parser.add_argument("--entrypoint", type=Path, required=True)
+              arguments = parser.parse_args()
+              root = arguments.root.resolve()
+              head = call(["git", "-C", str(root), "rev-parse", "HEAD"])
+              if head.returncode or head.stdout.decode().strip() != "b677091a123c578082a1746350619b8033f2278c":
+                  raise RuntimeError("Checkout HEAD mismatch")
+              actual = call(["git", "hash-object", str(root / "scripts/ci/check_sql_privileges_proposal.py")])
+              if actual.returncode or actual.stdout.decode().strip() != SCRIPT_BLOB:
+                  raise RuntimeError("Source SQL proof blob mismatch")
+              entrypoint = arguments.entrypoint.read_bytes()
+              structural_lines = [line.strip() for line in entrypoint.decode("utf-8").splitlines()]
+              markers = ("docker_temp_server_start() {", "listen_addresses=''", "docker_temp_server_stop() {",
+                         'docker_temp_server_start "$@"', "docker_temp_server_stop", 'exec "$@"')
+              positions = []
+              for marker in markers:
+                  matches = [index for index, line in enumerate(structural_lines)
+                             if marker in line and (marker != "docker_temp_server_stop" or line == marker)]
+                  if not matches:
+                      raise RuntimeError("Entrypoint structural marker missing: " + marker)
+                  positions.append(matches[0])
+              if positions != sorted(positions):
+                  raise RuntimeError("Entrypoint start/stop/final order mismatch")
+              pulled = call(["docker", "pull", IMAGE])
+              if pulled.returncode:
+                  fail("DOCKER_PULL", pulled, "")
+              inspected = call(["docker", "image", "inspect", IMAGE])
+              if inspected.returncode:
+                  fail("IMAGE_INSPECT", inspected, "")
+              image = json.loads(inspected.stdout)[0]
+              result = {"sourceHead": "b677091a123c578082a1746350619b8033f2278c",
+                        "scriptBlobSha": SCRIPT_BLOB, "postgresImage": IMAGE,
+                        "entrypointSha256": hashlib.sha256(entrypoint).hexdigest(),
+                        "TEMP_SERVER_SOCKET_ONLY": "YES",
+                        "TEMP_SERVER_STOP_BEFORE_FINAL": "YES",
+                        "POSTGRES_PULL_STATUS": "PASS", "POSTGRES_IMAGE_ID": image.get("Id"),
+                        "POSTGRES_REPO_DIGEST": image.get("RepoDigests", []),
+                        "readinessTransport": "TCP", "readinessStableQueries": 2,
+                        "PROOF_A": "NOT_RUN", "PROOF_B": "NOT_RUN"}
+              for label, number in (("PROOF_A", 1), ("PROOF_B", 2)):
+                  try:
+                      details = proof(root, number)
+                      result[label] = "PASS"
+                      result[label + "_DETAILS"] = details
+                  except RuntimeError as failure:
+                      result[label] = "FAIL"
+                      result[label + "_ERROR"] = str(failure)
+                      break
+              result["ROOT_CAUSE_CONFIRMED"] = "YES" if (
+                  result["PROOF_A"] == "PASS" and result["PROOF_B"] == "PASS" and
+                  (result["PROOF_A_DETAILS"]["SOCKET_READY_WHILE_TCP_NOT_READY"] or
+                   result["PROOF_B_DETAILS"]["SOCKET_READY_WHILE_TCP_NOT_READY"])
+              ) else "NO"
+              arguments.output.parent.mkdir(parents=True, exist_ok=True)
+              arguments.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+              print(json.dumps({key: result[key] for key in ("PROOF_A", "PROOF_B", "postgresImage")}))
+              if result["PROOF_A"] != "PASS" or result["PROOF_B"] != "PASS":
+                  raise SystemExit(1)
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+          python3 -B "$RUNNER_TEMP/sql_proof_stability_preflight.py" --root "$GITHUB_WORKSPACE" --entrypoint "$RUNNER_TEMP/postgres-entrypoint.sh" --output "$RUNNER_TEMP/sql-proof-stability-preflight.json"
+
+      - name: Upload sanitized A/B proof only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-proof-stability-preflight
+          path: ${{ runner.temp }}/sql-proof-stability-preflight.json
           if-no-files-found: error
           retention-days: 14
