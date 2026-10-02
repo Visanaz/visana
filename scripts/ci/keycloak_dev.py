@@ -57,6 +57,32 @@ def render(hostname, image, output):
     service = json.loads(content)
     if "${" in json.dumps(service):
         raise ValueError("Unresolved deployment input")
+    refs = []
+
+    def check_runtime(node):
+        if isinstance(node, dict):
+            if node.get("name") in ("KC_BOOTSTRAP_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_PASSWORD"):
+                raise ValueError("Retired bootstrap environment variables are forbidden")
+            if "secretKeyRef" in node:
+                ref = node["secretKeyRef"]
+                if not isinstance(ref, dict):
+                    raise ValueError("Invalid runtime secret reference")
+                if ref.get("name") == "visana-dev-keycloak-bootstrap-password":
+                    raise ValueError("Retired bootstrap secret reference is forbidden")
+                refs.append((ref.get("name"), ref.get("key")))
+            for value in node.values():
+                check_runtime(value)
+        elif isinstance(node, list):
+            for value in node:
+                check_runtime(value)
+
+    check_runtime(service)
+    expected_refs = {
+        ("visana-dev-keycloak-db-password", "1"),
+        ("visana-dev-keycloak-health-client-secret", "1"),
+    }
+    if len(refs) != 2 or set(refs) != expected_refs:
+        raise ValueError("Exactly the two approved runtime secrets at version 1 are required")
     Path(output).write_text(json.dumps(service, indent=2) + "\n", encoding="utf-8")
     print("RENDERED ONLY: proposed resources are not created or deployed")
 

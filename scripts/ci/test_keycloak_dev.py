@@ -1,9 +1,11 @@
 import contextlib
+import copy
 import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import keycloak_dev
 
 
@@ -31,8 +33,56 @@ class KeycloakPreparationTest(unittest.TestCase):
         self.assertEqual("/health/ready", keycloak["readinessProbe"]["httpGet"]["path"])
         self.assertIn("--address=127.0.0.1", proxy["args"])
         refs = [item["valueFrom"]["secretKeyRef"] for item in keycloak["env"] if "valueFrom" in item]
-        self.assertEqual(3, len(refs))
-        self.assertTrue(all(item["key"] == "1" for item in refs))
+        self.assertEqual(2, len(refs))
+        self.assertCountEqual([
+            {"name": "visana-dev-keycloak-db-password", "key": "1"},
+            {"name": "visana-dev-keycloak-health-client-secret", "key": "1"},
+        ], refs)
+        rendered = json.dumps(service)
+        for forbidden in ("KC_BOOTSTRAP_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_PASSWORD",
+                          "visana-dev-keycloak-bootstrap-password"):
+            self.assertNotIn(forbidden, rendered)
+
+    def test_render_rejects_retired_bootstrap_and_invalid_runtime_secrets(self):
+        template = json.loads((keycloak_dev.INFRA / "cloud-run-service.template.json").read_text())
+        cases = []
+        for name in ("KC_BOOTSTRAP_ADMIN_USERNAME", "KC_BOOTSTRAP_ADMIN_PASSWORD"):
+            service = copy.deepcopy(template)
+            service["spec"]["template"]["spec"]["containers"][1].setdefault("env", []).append(
+                {"name": name, "value": "synthetic"})
+            cases.append((name, service))
+        for secret, version in (("visana-dev-keycloak-bootstrap-password", "1"),
+                                ("unexpected-secret", "1"),
+                                ("visana-dev-keycloak-db-password", "2")):
+            service = copy.deepcopy(template)
+            env = service["spec"]["template"]["spec"]["containers"][0]["env"]
+            next(item for item in env if item["name"] == "KC_DB_PASSWORD")["valueFrom"] = {
+                "secretKeyRef": {"name": secret, "key": version}}
+            cases.append((secret + ":" + version, service))
+        service = copy.deepcopy(template)
+        service["spec"]["template"]["spec"]["volumes"] = [
+            {"secretKeyRef": {"name": "visana-dev-keycloak-bootstrap-password", "key": "1"}}]
+        cases.append(("bootstrap reference outside env", service))
+        for operation in ("missing", "duplicate"):
+            service = copy.deepcopy(template)
+            env = service["spec"]["template"]["spec"]["containers"][0]["env"]
+            secret_env = next(item for item in env if item["name"] == "KC_DB_PASSWORD")
+            if operation == "missing":
+                env.remove(secret_env)
+            else:
+                env.append(copy.deepcopy(secret_env))
+            cases.append((operation, service))
+        for label, service in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                infra = Path(directory)
+                (infra / "cloud-run-service.template.json").write_text(json.dumps(service))
+                output = infra / "rejected.json"
+                with patch.object(keycloak_dev, "INFRA", infra), \
+                        patch.object(keycloak_dev, "validate"), self.assertRaises(ValueError):
+                    keycloak_dev.render("https://proof.example.invalid",
+                                        "us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/"
+                                        "visana-keycloak-dev@sha256:" + "a" * 64, output)
+                self.assertFalse(output.exists())
 
     def test_rejects_local_http_credential_or_non_origin_hostname(self):
         for hostname in ("http://example.invalid", "https://localhost", "https://127.0.0.1",

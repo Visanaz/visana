@@ -36,8 +36,6 @@
               {"name": "KC_DB_URL", "value": "jdbc:postgresql://127.0.0.1:5432/keycloak_dev"},
               {"name": "KC_DB_USERNAME", "value": "keycloak_app_dev"},
               {"name": "KC_DB_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "visana-dev-keycloak-db-password", "key": "1"}}},
-              {"name": "KC_BOOTSTRAP_ADMIN_USERNAME", "value": "visana-dev-bootstrap"},
-              {"name": "KC_BOOTSTRAP_ADMIN_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "visana-dev-keycloak-bootstrap-password", "key": "1"}}},
               {"name": "VISANA_KEYCLOAK_HEALTH_CLIENT_SECRET", "valueFrom": {"secretKeyRef": {"name": "visana-dev-keycloak-health-client-secret", "key": "1"}}},
               {"name": "JAVA_OPTS_KC_HEAP", "value": "-XX:MaxRAMPercentage=65"}
             ],
