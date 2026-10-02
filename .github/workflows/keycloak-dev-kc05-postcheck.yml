@@ -1,0 +1,167 @@
+name: KC05_POSTCHECK_READ_ONLY
+
+on:
+  push:
+    branches: [ops/keycloak-dev-foundation]
+    paths: [.github/workflows/keycloak-dev-kc05-postcheck.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: >-
+      github.repository == 'Visanaz/visana' &&
+      github.ref == 'refs/heads/ops/keycloak-dev-foundation' &&
+      github.actor == 'KmDRF' &&
+      github.triggering_actor == 'KmDRF'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Verify PR before cloud authentication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json
+          import subprocess
+          process = subprocess.run(["gh", "api", "repos/Visanaz/visana/pulls/20"],
+                                   capture_output=True, text=True, check=False)
+          if process.returncode:
+              raise SystemExit("PR_PREFLIGHT_UNAVAILABLE")
+          pr = json.loads(process.stdout)
+          if not (pr.get("state") == "open" and pr.get("draft") is True
+                  and pr.get("merged_at") is None and pr["base"]["ref"] == "dev"
+                  and pr["head"]["sha"] == "8701fc5b377af72665dce210203e43c0433a1fbd"):
+              raise SystemExit("PR_PREFLIGHT_MISMATCH")
+          print("PR_PREFLIGHT=PASS")
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 8701fc5b377af72665dce210203e43c0433a1fbd
+          path: approved-source
+          persist-credentials: false
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          project_id: visana-erp-dev
+      - uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
+      - name: Inspect existing service, IAM and sanitized log indicators
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.request
+
+          project = "visana-erp-dev"
+          region = "us-central1"
+          service = "visana-keycloak-dev"
+          deployer = "github-actions-dev@visana-erp-dev.iam.gserviceaccount.com"
+          target = Path(os.environ["RUNNER_TEMP"]) / "kc05-postcheck.json"
+          report = {"RUN_ID": os.environ.get("GITHUB_RUN_ID"),
+                    "SOURCE_SHA": "8701fc5b377af72665dce210203e43c0433a1fbd",
+                    "POSTCHECK_ONLY": "YES", "DEPLOY_ATTEMPTED": "NO",
+                    "SERVICE_EXISTS": "UNKNOWN", "PUBLIC_INVOKER": "UNKNOWN",
+                    "PRIVATE_SERVICE": "UNKNOWN", "DATABASE_CONNECTED": "UNKNOWN",
+                    "KEYCLOAK_SCHEMA_INITIALIZED": "UNKNOWN", "ERRORS": {}}
+
+          def run(args):
+              return subprocess.run(args, capture_output=True, text=True,
+                                    timeout=90, check=False)
+
+          try:
+              identity = run(["gcloud", "auth", "list", "--filter=status:ACTIVE",
+                              "--format=value(account)"])
+              if identity.returncode or identity.stdout.strip() != deployer:
+                  raise RuntimeError("IDENTITY_MISMATCH")
+              described = run(["gcloud", "run", "services", "describe", service,
+                               "--project=" + project, "--region=" + region,
+                               "--format=json"])
+              if described.returncode:
+                  raise RuntimeError("SERVICE_DESCRIBE_FAILED")
+              data = json.loads(described.stdout)
+              report["SERVICE_EXISTS"] = "YES"
+              status = data.get("status", {})
+              revision = status.get("latestReadyRevisionName")
+              report["REVISION"] = revision
+              report["REVISION_READY"] = "YES" if revision else "UNKNOWN"
+              report["SERVICE_URL"] = status.get("url")
+              annotation = data.get("metadata", {}).get("annotations", {})
+              report["INVOKER_IAM_DISABLED"] = annotation.get(
+                  "run.googleapis.com/invoker-iam-disabled", "false")
+
+              policy = run(["gcloud", "run", "services", "get-iam-policy", service,
+                            "--project=" + project, "--region=" + region,
+                            "--format=json"])
+              if policy.returncode:
+                  report["ERRORS"]["IAM_POLICY"] = "READ_FAILED"
+              else:
+                  bindings = json.loads(policy.stdout).get("bindings", [])
+                  public = any(binding.get("role") == "roles/run.invoker" and
+                               any(member in ("allUsers", "allAuthenticatedUsers")
+                                   for member in binding.get("members", []))
+                               for binding in bindings)
+                  public = public or report["INVOKER_IAM_DISABLED"] == "true"
+                  report["PUBLIC_INVOKER"] = "YES" if public else "NO"
+                  report["PRIVATE_SERVICE"] = "NO" if public else "YES"
+
+              if revision:
+                  log_filter = ('resource.type="cloud_run_revision" AND '
+                                'resource.labels.service_name="' + service + '" AND '
+                                'resource.labels.revision_name="' + revision + '"')
+                  logs = run(["gcloud", "logging", "read", log_filter,
+                              "--project=" + project, "--limit=300", "--format=json"])
+                  if logs.returncode:
+                      report["ERRORS"]["LOGS"] = "READ_FAILED"
+                  else:
+                      entries = json.loads(logs.stdout)
+                      report["LOG_COUNT"] = len(entries)
+                      messages = [str(entry.get("textPayload") or
+                                      entry.get("jsonPayload", {}).get("message", ""))
+                                  for entry in entries if isinstance(entry, dict)]
+                      joined = "\n".join(messages).lower()
+                      started = bool(re.search(r"keycloak.*started|started in [0-9.]+s", joined))
+                      db_error = any(term in joined for term in (
+                          "password authentication failed", "could not obtain connection",
+                          "connection refused", "permission denied for database",
+                          "failed to connect to database"))
+                      schema = any(term in joined for term in (
+                          "liquibase", "updating database", "database schema",
+                          "initializing master realm", "importing realm"))
+                      proxy = any(term in joined for term in (
+                          "cloud sql proxy", "cloud-sql-proxy", "ready for new connections"))
+                      report["KEYCLOAK_STARTED_LOG"] = "YES" if started else "NO"
+                      report["DB_ERROR_INDICATOR"] = "YES" if db_error else "NO"
+                      report["SCHEMA_LOG_INDICATOR"] = "YES" if schema else "NO"
+                      report["PROXY_STARTUP_LOG_INDICATOR"] = "YES" if proxy else "NO"
+                      report["DATABASE_CONNECTED"] = (
+                          "YES" if started and not db_error else "UNKNOWN")
+                      report["KEYCLOAK_SCHEMA_INITIALIZED"] = (
+                          "YES" if started and schema and not db_error else "UNKNOWN")
+
+              url = status.get("url")
+              if url:
+                  try:
+                      with urllib.request.urlopen(url, timeout=20) as response:
+                          report["UNAUTHENTICATED_HTTP_STATUS"] = response.status
+                  except urllib.error.HTTPError as exc:
+                      report["UNAUTHENTICATED_HTTP_STATUS"] = exc.code
+                  except (urllib.error.URLError, TimeoutError):
+                      report["UNAUTHENTICATED_HTTP_STATUS"] = "UNAVAILABLE"
+          except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
+              report["ERRORS"]["CHECK"] = (str(exc) if isinstance(exc, RuntimeError)
+                                             else type(exc).__name__)
+          finally:
+              target.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+              print("KC05_READ_ONLY_POSTCHECK_COMPLETE")
+      - name: Upload sanitized postcheck
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kc05-postcheck
+          path: ${{ runner.temp }}/kc05-postcheck.json
+          if-no-files-found: warn
+          retention-days: 14
