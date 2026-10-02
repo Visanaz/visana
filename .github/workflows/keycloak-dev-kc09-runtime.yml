@@ -1,0 +1,405 @@
+name: KC09_RUNTIME_PHASE_A_ONCE
+
+on:
+  push:
+    branches: [ops/keycloak-dev-foundation]
+    paths: [.github/workflows/keycloak-dev-kc09-runtime.yml]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: kc09-runtime-phase-a
+  cancel-in-progress: false
+
+jobs:
+  runtime:
+    if: >-
+      github.repository == 'Visanaz/visana' &&
+      github.ref == 'refs/heads/ops/keycloak-dev-foundation' &&
+      github.actor == 'KmDRF' && github.triggering_actor == 'KmDRF' &&
+      github.run_attempt == 1 &&
+      github.event.deleted == false &&
+      github.event.head_commit.message == 'ops(keycloak): execute authorized KC09 runtime phase A once'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Verify PR and certifying CI before GCP authentication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json, subprocess
+          def api(path):
+              p = subprocess.run(['gh', 'api', 'repos/Visanaz/visana/' + path], capture_output=True, text=True, timeout=60)
+              if p.returncode:
+                  raise SystemExit('GITHUB_PREFLIGHT_UNAVAILABLE')
+              return json.loads(p.stdout)
+          pr = api('pulls/20')
+          assert pr['state'] == 'open' and pr['draft'] is True and pr['merged_at'] is None
+          assert pr['base']['ref'] == 'dev' and pr['head']['sha'] == 'f85e0fc83c73bb4577f0df48a553729f5ce4bbed'
+          ci = api('actions/runs/37065780982')
+          assert ci['head_sha'] == pr['head']['sha'] and ci['conclusion'] == 'success' and ci['status'] == 'completed'
+          print('PR_AND_SOURCE_CI_GATE=PASS')
+
+      - name: Checkout exact certified source separately
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: f85e0fc83c73bb4577f0df48a553729f5ce4bbed
+          path: approved-source
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify image reuse and synthetic source expectation
+        shell: python
+        run: |
+          import json, os, subprocess, sys
+          from pathlib import Path
+          source = Path('approved-source')
+          def git(*args):
+              return subprocess.check_output(['git', '-C', str(source), *args], text=True).strip()
+          assert git('rev-parse', 'HEAD') == 'f85e0fc83c73bb4577f0df48a553729f5ce4bbed'
+          old = '8701fc5b377af72665dce210203e43c0433a1fbd'
+          assert set(git('diff', '--name-only', old, 'HEAD').splitlines()) == {
+              'infra/keycloak/cloud-run-service.template.json', 'scripts/ci/keycloak_dev.py', 'scripts/ci/test_keycloak_dev.py'}
+          for name in ('Dockerfile', 'keycloak.conf', 'visana-erp-realm.json', '.dockerignore'):
+              path = 'infra/keycloak/' + name
+              assert git('rev-parse', old + ':' + path) == git('rev-parse', 'HEAD:' + path)
+          output = Path(os.environ['RUNNER_TEMP']) / 'kc09-synthetic.json'
+          p = subprocess.run([sys.executable, '-B', str(source / 'scripts/ci/keycloak_dev.py'),
+              'render', '--hostname', 'https://kc09-proof.example.invalid', '--image',
+              'us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/visana-keycloak-dev@sha256:00462375f745a2f05afbc22b337fab23ae7a757846581edbab8f9afc14819b95',
+              '--output', str(output)], capture_output=True, text=True, timeout=60)
+          assert p.returncode == 0, 'SYNTHETIC_RENDER_FAILED'
+          text = output.read_text()
+          for forbidden in ('KC_BOOTSTRAP_ADMIN_USERNAME', 'KC_BOOTSTRAP_ADMIN_PASSWORD', 'visana-dev-keycloak-bootstrap-password'):
+              assert forbidden not in text
+          refs = []
+          def walk(node):
+              if isinstance(node, dict):
+                  if 'secretKeyRef' in node:
+                      refs.append(node['secretKeyRef'])
+                  for value in node.values(): walk(value)
+              elif isinstance(node, list):
+                  for value in node: walk(value)
+          walk(json.loads(text))
+          assert len(refs) == 2 and {(r['name'], r['key']) for r in refs} == {
+              ('visana-dev-keycloak-db-password', '1'), ('visana-dev-keycloak-health-client-secret', '1')}
+          print('SOURCE_EXPECTATION=PASS; IMAGE_CONTEXT_UNCHANGED=YES; SECRET_REF_COUNT=2')
+
+      - name: Authenticate DEV deployer
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          project_id: visana-erp-dev
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
+
+      - name: Guarded single targeted update and sanitized postchecks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDSDK_CORE_DISABLE_PROMPTS: '1'
+          CLOUDSDK_PAGER: cat
+        shell: python
+        run: |
+          import copy, datetime, json, os, re, subprocess, time
+          import urllib.error, urllib.parse, urllib.request
+          from pathlib import Path
+
+          project, region, service = 'visana-erp-dev', 'us-central1', 'visana-keycloak-dev'
+          source_sha = 'f85e0fc83c73bb4577f0df48a553729f5ce4bbed'
+          old_revision = 'visana-keycloak-dev-00001-hzn'
+          runtime_sa = 'visana-keycloak-dev@visana-erp-dev.iam.gserviceaccount.com'
+          deployer = 'github-actions-dev@visana-erp-dev.iam.gserviceaccount.com'
+          expected_image = 'us-central1-docker.pkg.dev/visana-erp-dev/visana-repo/visana-keycloak-dev@sha256:00462375f745a2f05afbc22b337fab23ae7a757846581edbab8f9afc14819b95'
+          bootstrap = 'visana-dev-keycloak-bootstrap-password'
+          forbidden = {'KC_BOOTSTRAP_ADMIN_USERNAME', 'KC_BOOTSTRAP_ADMIN_PASSWORD'}
+          expected_refs = ['visana-dev-keycloak-db-password:1', 'visana-dev-keycloak-health-client-secret:1']
+          hashed_url = 'https://visana-keycloak-dev-2f64hwbmbq-uc.a.run.app'
+          canonical_url = 'https://visana-keycloak-dev-984938781030.us-central1.run.app'
+          api_url = 'https://run.googleapis.com/v2/projects/' + project + '/locations/' + region + '/services/' + service
+          evidence = Path(os.environ['RUNNER_TEMP']) / 'kc09-evidence'
+          evidence.mkdir()
+          result = dict(SOURCE_SHA=source_sha, KC09_SOURCE_SHA=source_sha, CI_RUN=37065780982,
+              CI_STATUS='SUCCESS', KC09_CI_RUN=37065780982, KC09_CI_STATUS='SUCCESS',
+              IMAGE_CONTEXT_UNCHANGED='YES', OLD_REVISION=old_revision, NEW_REVISION=None,
+              KC09_DEPLOY_ATTEMPTED='NO', KC09_DEPLOY_COUNT=0,
+              BOOTSTRAP_USER_REMOVED='NO', BOOTSTRAP_SECRET_RETAINED='NOT_VERIFIED',
+              KC09_RUNTIME_PHASE_STATUS='PENDING', KC09_STATUS='PENDING_HUMAN_RETIREMENT',
+              PHASE2_GATE_IDP='FAIL', ALL_GATES_PASS='NO', KC10_READY_FOR_AUTHORIZATION='NO', KC10_AUTHORIZED='NO')
+          for key in ('REVISION_READY', 'PRE_BOOTSTRAP_USERNAME_REF', 'PRE_BOOTSTRAP_PASSWORD_REF',
+              'ACTIVE_BOOTSTRAP_USERNAME_REF', 'ACTIVE_BOOTSTRAP_PASSWORD_REF', 'ACTIVE_BOOTSTRAP_SECRET_REF',
+              'IMAGE_DIGEST_MATCH', 'RUNTIME_SA_MATCH', 'SCALING_PRESERVED', 'PUBLIC_INVOKER', 'PRIVATE_SERVICE',
+              'HOSTNAME_BINDING_VALID', 'PROXY_READY', 'KEYCLOAK_READY', 'DATABASE_CONNECTED',
+              'BOOTSTRAP_SECRET_ACTIVE_RUNTIME_REF'):
+              result[key] = 'NOT_VERIFIED'
+          for key in ('RUNTIME_SECRET_REFS', 'SECRET_REF_COUNT', 'SCALING_MODE_PRE', 'SCALING_COUNT_PRE',
+              'SCALING_MODE_POST', 'SCALING_COUNT_POST', 'DISCOVERY_HTTP', 'OIDC_ISSUER'):
+              result[key] = None
+          def save():
+              (evidence / 'kc09-runtime-retirement-result.json').write_text(json.dumps(result, indent=2) + '\n')
+          class Stop(Exception): pass
+          def require(ok, code):
+              if not ok: raise Stop(code)
+          def command(args, timeout=90):
+              return subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+          def error_metadata(text):
+              return {'codes': sorted(set(re.findall(r'\b(?:PERMISSION_DENIED|NOT_FOUND|INVALID_ARGUMENT|FAILED_PRECONDITION|UNAUTHENTICATED|RESOURCE_EXHAUSTED|DEADLINE_EXCEEDED)\b', text))),
+                      'permissions': sorted(set(re.findall(r'\b(?:run|logging|secretmanager|iam|resourcemanager)\.[a-zA-Z]+\.[a-zA-Z]+\b', text)))}
+          def gjson(args):
+              p = command(['gcloud', *args, '--project=' + project, '--format=json'])
+              if p.returncode:
+                  result['LAST_COMMAND_ERROR'] = error_metadata(p.stderr)
+                  raise Stop('METADATA_COMMAND_FAILED')
+              return json.loads(p.stdout)
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl): return None
+          opener = urllib.request.build_opener(NoRedirect)
+          def get(url, token=None, serverless=False):
+              headers = {} if token is None else {('X-Serverless-Authorization' if serverless else 'Authorization'): 'Bearer ' + token}
+              try:
+                  with opener.open(urllib.request.Request(url, headers=headers), timeout=60) as response:
+                      return response.status, response.read(4 * 1024 * 1024)
+              except urllib.error.HTTPError as exc:
+                  return exc.code, b''
+          def service_data():
+              status, body = get(api_url, access_token)
+              result['LAST_SERVICE_GET_HTTP'] = status
+              require(status == 200, 'SERVICE_METADATA_UNAVAILABLE')
+              return json.loads(body)
+          def short(name): return name.rsplit('/', 1)[-1] if name else None
+          def kc(data): return next(c for c in data['template']['containers'] if c['name'] == 'keycloak')
+          def refs(container):
+              return sorted(short(e['valueSource']['secretKeyRef']['secret']) + ':' + e['valueSource']['secretKeyRef']['version']
+                  for e in container.get('env', []) if 'secretKeyRef' in e.get('valueSource', {}))
+          def all_refs(node):
+              found = []
+              if isinstance(node, dict):
+                  if 'secretKeyRef' in node: found.append(node['secretKeyRef'])
+                  for value in node.values(): found.extend(all_refs(value))
+              elif isinstance(node, list):
+                  for value in node: found.extend(all_refs(value))
+              return found
+          def scaling(data):
+              value = data.get('scaling', {})
+              return value.get('scalingMode'), value.get('manualInstanceCount')
+          def ready(data):
+              return data.get('terminalCondition', {}).get('state') == 'CONDITION_SUCCEEDED' and not data.get('reconciling', False)
+          def privacy(data):
+              policy = gjson(['run', 'services', 'get-iam-policy', service, '--region=' + region])
+              public = data.get('invokerIamDisabled', False) or any(
+                  m in ('allUsers', 'allAuthenticatedUsers') for b in policy.get('bindings', []) for m in b.get('members', []))
+              require(not public, 'PUBLIC_ACCESS_DETECTED')
+              result.update(PUBLIC_INVOKER='NO', PRIVATE_SERVICE='YES')
+              return policy
+          def configuration(data, remove=False):
+              template = copy.deepcopy(data['template'])
+              for field in ('revision', 'client', 'clientVersion'): template.pop(field, None)
+              if remove:
+                  for c in template['containers']:
+                      if c['name'] == 'keycloak': c['env'] = [e for e in c.get('env', []) if e['name'] not in forbidden]
+              return {**{k: data.get(k) for k in ('scaling', 'ingress', 'invokerIamDisabled', 'defaultUriDisabled',
+                  'iapEnabled', 'customAudiences', 'binaryAuthorization', 'traffic')}, 'template': template}
+          def snapshot(data, name):
+              # Never persist literal env values, args, headers, opaque annotations or full metadata.
+              t = data['template']
+              snap = {k: data.get(k) for k in ('name', 'generation', 'latestCreatedRevision', 'latestReadyRevision',
+                  'ingress', 'scaling', 'traffic', 'trafficStatuses', 'invokerIamDisabled')}
+              snap['template'] = {k: t.get(k) for k in ('serviceAccount', 'timeout', 'maxInstanceRequestConcurrency', 'scaling', 'executionEnvironment')}
+              snap['containers'] = []
+              for c in t['containers']:
+                  item = {k: c.get(k) for k in ('name', 'image', 'resources', 'ports', 'dependsOn')}
+                  item['envNames'] = [e['name'] for e in c.get('env', [])]
+                  item['secretRefs'] = refs(c)
+                  for probe in ('startupProbe', 'livenessProbe', 'readinessProbe'):
+                      p = copy.deepcopy(c.get(probe))
+                      if p and 'httpGet' in p: p['httpGet'].pop('httpHeaders', None)
+                      item[probe] = p
+                  snap['containers'].append(item)
+              (evidence / (name + '.json')).write_text(json.dumps(snap, indent=2) + '\n')
+          def probes_ok(data):
+              containers = {c['name']: c for c in data['template']['containers']}
+              for cname, probe, path, port in (
+                  ('keycloak', 'startupProbe', '/health/ready', 9000),
+                  ('keycloak', 'livenessProbe', '/health/live', 9000),
+                  ('cloud-sql-proxy', 'startupProbe', '/startup', 9090),
+                  ('cloud-sql-proxy', 'livenessProbe', '/liveness', 9090)):
+                  h = containers[cname].get(probe, {}).get('httpGet', {})
+                  if h.get('path') != path or h.get('port') != port: return False
+              return True
+          def check_bootstrap_secret():
+              p = command(['gcloud', 'secrets', 'versions', 'describe', '1', '--secret=' + bootstrap,
+                  '--project=' + project, '--format=json(name,state)'])
+              if p.returncode:
+                  result['BOOTSTRAP_SECRET_METADATA_ERROR'] = error_metadata(p.stderr)
+                  return False
+              value = json.loads(p.stdout)
+              ok = value.get('state') == 'ENABLED' and value.get('name', '').endswith('/secrets/' + bootstrap + '/versions/1')
+              result['BOOTSTRAP_SECRET_RETAINED'] = 'YES' if ok else 'NO'
+              return ok
+          stage = 'IDENTITY'
+          try:
+              active = command(['gcloud', 'auth', 'list', '--filter=status:ACTIVE', '--format=value(account)'])
+              require(active.returncode == 0 and active.stdout.strip() == deployer, 'IDENTITY_MISMATCH')
+              p = command(['gcloud', 'auth', 'print-access-token'])
+              require(p.returncode == 0 and bool(p.stdout.strip()), 'ACCESS_TOKEN_UNAVAILABLE')
+              access_token = p.stdout.strip()
+              stage = 'PRECHECK'
+              before = service_data()
+              snapshot(before, 'runtime-pre')
+              require(short(before.get('latestReadyRevision')) == old_revision and short(before.get('latestCreatedRevision')) == old_revision and ready(before), 'BASELINE_REVISION_MISMATCH')
+              require(kc(before)['image'] == expected_image and before['template']['serviceAccount'] == runtime_sa, 'IMAGE_OR_RUNTIME_SA_MISMATCH')
+              result['SCALING_MODE_PRE'], result['SCALING_COUNT_PRE'] = scaling(before)
+              require(scaling(before) == ('MANUAL', 1), 'SCALING_PRE_MISMATCH')
+              pre_policy = privacy(before)
+              require(probes_ok(before), 'PROBES_PRE_MISMATCH')
+              env = {e['name']: e for e in kc(before).get('env', [])}
+              result['PRE_BOOTSTRAP_USERNAME_REF'] = 'YES' if 'KC_BOOTSTRAP_ADMIN_USERNAME' in env else 'NO'
+              result['PRE_BOOTSTRAP_PASSWORD_REF'] = 'YES' if 'KC_BOOTSTRAP_ADMIN_PASSWORD' in env else 'NO'
+              require(forbidden.issubset(env), 'DRIFT_ALREADY_APPLIED')
+              require(env['KC_BOOTSTRAP_ADMIN_PASSWORD'].get('valueSource', {}).get('secretKeyRef') in (
+                  {'secret': bootstrap, 'version': '1'},
+                  {'secret': 'projects/' + project + '/secrets/' + bootstrap, 'version': '1'},
+                  {'secret': 'projects/984938781030/secrets/' + bootstrap, 'version': '1'}), 'BOOTSTRAP_REFERENCE_MISMATCH')
+              require(refs(kc(before)) == sorted(expected_refs + [bootstrap + ':1']), 'PRE_SECRET_REFS_MISMATCH')
+              traffic = before.get('traffic', [])
+              require(len(traffic) == 1 and traffic[0].get('type') == 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST' and traffic[0].get('percent') == 100 and not traffic[0].get('tag'), 'TRAFFIC_PRE_MISMATCH')
+              result['UNAUTHENTICATED_HTTP_PRE'], _ = get(hashed_url)
+              require(result['UNAUTHENTICATED_HTTP_PRE'] == 403, 'PRIVATE_HTTP_PRE_MISMATCH')
+              # Exact source is rechecked immediately before the single mutation.
+              p = command(['gh', 'api', 'repos/Visanaz/visana/pulls/20'])
+              require(p.returncode == 0, 'PR_RECHECK_UNAVAILABLE')
+              pr = json.loads(p.stdout)
+              require(pr['state'] == 'open' and pr['draft'] is True and pr['merged_at'] is None and pr['base']['ref'] == 'dev' and pr['head']['sha'] == source_sha, 'PR_RECHECK_MISMATCH')
+              update = ['gcloud', 'run', 'services', 'update', service, '--project=' + project,
+                  '--region=' + region, '--container=keycloak', '--remove-env-vars=KC_BOOTSTRAP_ADMIN_USERNAME',
+                  '--remove-secrets=KC_BOOTSTRAP_ADMIN_PASSWORD', '--quiet']
+              stage = 'DRY_RUN'
+              help_result = command(['gcloud', 'run', 'services', 'update', '--help'])
+              require(help_result.returncode == 0, 'CLI_HELP_UNAVAILABLE')
+              supported = '--dry-run' in help_result.stdout
+              result['DRY_RUN_SUPPORTED'] = 'YES' if supported else 'NO'
+              if supported:
+                  dry = command(update + ['--dry-run', '--format=json'], timeout=180)
+                  require(dry.returncode == 0, 'DRY_RUN_FAILED')
+                  proposed = json.loads(dry.stdout)
+                  # Only accept a directly comparable v2 service; otherwise stop for inspection.
+                  require('template' in proposed and configuration(proposed) == configuration(before, remove=True), 'DRY_RUN_EXTRA_CHANGE_OR_UNCOMPARABLE')
+                  result['DRY_RUN_RESULT'] = 'PASS'
+              else:
+                  result['DRY_RUN_RESULT'] = 'UNSUPPORTED_AUTHORIZED_TARGETED_UPDATE'
+              fresh = service_data()
+              require(fresh.get('etag') == before.get('etag') and configuration(fresh) == configuration(before), 'PRE_MUTATION_DRIFT')
+              result['KC09_DEPLOY_ATTEMPTED'], result['KC09_DEPLOY_COUNT'] = 'YES', 1
+              result['UPDATE_STARTED_UTC'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+              save()
+              stage = 'SINGLE_UPDATE'
+              updated = command(update, timeout=900)
+              result['UPDATE_EXIT_CODE'] = updated.returncode
+              if updated.returncode:
+                  result['UPDATE_ERROR'] = error_metadata(updated.stderr)
+                  raise Stop('TARGETED_UPDATE_FAILED_NO_RETRY')
+              stage = 'POSTCHECK'
+              after = service_data()
+              snapshot(after, 'runtime-post')
+              result['NEW_REVISION'] = short(after.get('latestCreatedRevision'))
+              require(result['NEW_REVISION'] != old_revision and ready(after) and after.get('latestCreatedRevision') == after.get('latestReadyRevision'), 'NEW_REVISION_NOT_READY')
+              result['REVISION_READY'] = 'YES'
+              result['SCALING_MODE_POST'], result['SCALING_COUNT_POST'] = scaling(after)
+              require(scaling(after) == ('MANUAL', 1) and after.get('scaling') == before.get('scaling'), 'FAIL_SCALING_DRIFT')
+              result['SCALING_PRESERVED'] = 'YES'
+              result['IMAGE_DIGEST_MATCH'] = 'YES' if kc(after)['image'] == expected_image else 'NO'
+              result['RUNTIME_SA_MATCH'] = 'YES' if after['template']['serviceAccount'] == runtime_sa else 'NO'
+              post_names = {e['name'] for e in kc(after).get('env', [])}
+              result['ACTIVE_BOOTSTRAP_USERNAME_REF'] = 'YES' if 'KC_BOOTSTRAP_ADMIN_USERNAME' in post_names else 'NO'
+              result['ACTIVE_BOOTSTRAP_PASSWORD_REF'] = 'YES' if 'KC_BOOTSTRAP_ADMIN_PASSWORD' in post_names else 'NO'
+              result['ACTIVE_BOOTSTRAP_SECRET_REF'] = 'YES' if any(short(r.get('secret')) == bootstrap for r in all_refs(after['template'])) else 'NO'
+              result['BOOTSTRAP_SECRET_ACTIVE_RUNTIME_REF'] = result['ACTIVE_BOOTSTRAP_SECRET_REF']
+              result['RUNTIME_SECRET_REFS'] = refs(kc(after))
+              result['SECRET_REF_COUNT'] = len(result['RUNTIME_SECRET_REFS'])
+              require(not forbidden.intersection(post_names) and result['ACTIVE_BOOTSTRAP_SECRET_REF'] == 'NO' and result['RUNTIME_SECRET_REFS'] == expected_refs, 'POST_SECRET_REFS_MISMATCH')
+              require(configuration(after) == configuration(before, remove=True), 'UNEXPECTED_CONFIGURATION_DRIFT')
+              result['ALL_OTHER_CONFIGURATION_PRESERVED'] = 'YES'
+              actual_traffic = after.get('trafficStatuses', [])
+              require(len(actual_traffic) == 1 and actual_traffic[0].get('percent') == 100 and short(actual_traffic[0].get('revision')) == result['NEW_REVISION'], 'POST_TRAFFIC_MISMATCH')
+              post_policy = privacy(after)
+              require(pre_policy == post_policy, 'IAM_POLICY_DRIFT')
+              require(probes_ok(after), 'PROBES_POST_MISMATCH')
+              result['PROBES_METADATA'] = 'PASS'
+              # Ready with unchanged HTTP startup probes establishes both container readiness.
+              result['PROXY_READY'] = result['KEYCLOAK_READY'] = 'YES'
+              result['HEALTH_EVIDENCE'] = 'CLOUD_RUN_READY_WITH_UNCHANGED_HTTP_STARTUP_PROBES'
+              result['UNAUTHENTICATED_HTTP'], _ = get(hashed_url)
+              require(result['UNAUTHENTICATED_HTTP'] == 403, 'PRIVATE_HTTP_POST_MISMATCH')
+              stage = 'OIDC'
+              p = command(['gcloud', 'auth', 'print-identity-token', '--audiences=' + hashed_url])
+              require(p.returncode == 0 and p.stdout.strip().count('.') == 2, 'ID_TOKEN_UNAVAILABLE')
+              token = p.stdout.strip()
+              result['DISCOVERY_HTTP'], body = get(hashed_url + '/realms/visana-erp/.well-known/openid-configuration', token, True)
+              del token, p
+              require(result['DISCOVERY_HTTP'] == 200, 'OIDC_DISCOVERY_FAILED')
+              discovery = json.loads(body)
+              result['OIDC_ISSUER'] = discovery.get('issuer') if discovery.get('issuer') == canonical_url + '/realms/visana-erp' else 'UNEXPECTED_ISSUER_REDACTED'
+              host = urllib.parse.urlparse(canonical_url).hostname
+              valid = result['OIDC_ISSUER'] == canonical_url + '/realms/visana-erp' and all(
+                  urllib.parse.urlparse(discovery.get(k, '')).hostname == host for k in ('authorization_endpoint', 'token_endpoint', 'jwks_uri'))
+              result['HOSTNAME_BINDING_VALID'] = 'YES' if valid else 'NO'
+              require(valid, 'HOSTNAME_BINDING_INVALID')
+              result['OIDC_POST_KC09'] = 'PASS'
+              # Database-backed realm discovery plus successful Keycloak health startup probe.
+              result['DATABASE_CONNECTED'] = 'YES'
+              result['DATABASE_EVIDENCE'] = 'NEW_REVISION_READY_HEALTH_READY_PROBE_AND_DATABASE_BACKED_REALM_DISCOVERY_200'
+              stage = 'LOGS_AND_SECRET_METADATA'
+              query = 'resource.type="cloud_run_revision" AND resource.labels.service_name="' + service + '" AND resource.labels.revision_name="' + result['NEW_REVISION'] + '"'
+              p = command(['gcloud', 'logging', 'read', query, '--project=' + project, '--freshness=1h', '--limit=200', '--order=asc', '--format=json'], timeout=90)
+              if p.returncode:
+                  result['LOGS_STATUS'] = 'UNAVAILABLE'
+                  result['LOGS_ERROR'] = error_metadata(p.stderr)
+              else:
+                  entries = json.loads(p.stdout)
+                  categories = {k: 0 for k in ('DATABASE_AUTH', 'SECRET_PERMISSION', 'STARTUP_FATAL', 'PROBE_FAILURE', 'BOOTSTRAP_WARNING_ERROR')}
+                  patterns = {'DATABASE_AUTH': r'(password authentication failed|authentication failed.*database|unable to (?:obtain|acquire).*connection|database.*auth.*fail)',
+                      'SECRET_PERMISSION': r'(secret.*(?:permission.denied|access.denied)|(?:permission.denied|access.denied).*secret)',
+                      'STARTUP_FATAL': r'(fatal|failed to start|startup.*fail)',
+                      'PROBE_FAILURE': r'(probe.*fail|startup.*probe.*fail)',
+                      'BOOTSTRAP_WARNING_ERROR': r'(bootstrap.*(?:warn|error|fail)|(?:warn|error|fail).*bootstrap)'}
+                  severe = 0
+                  for entry in entries:
+                      text = json.dumps(entry.get('jsonPayload', {})) + ' ' + entry.get('textPayload', '')
+                      for category, pattern in patterns.items():
+                          if re.search(pattern, text, re.I): categories[category] += 1
+                      if entry.get('severity') in ('ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY'): severe += 1
+                  result['LOGS_STATUS'] = 'CHECKED' if entries else 'NO_ENTRIES_OBSERVED'
+                  result['LOG_ENTRY_COUNT'] = len(entries)
+                  result['LOG_CATEGORY_COUNTS'] = categories
+                  result['LOG_SEVERE_COUNT'] = severe
+                  result['LOGS_MAY_BE_TRUNCATED'] = len(entries) == 200
+              secret_ok = check_bootstrap_secret()
+              require(secret_ok, 'BOOTSTRAP_SECRET_RETENTION_NOT_VERIFIED')
+              require(result['LOGS_STATUS'] == 'CHECKED' and not result['LOGS_MAY_BE_TRUNCATED'], 'LOG_INSPECTION_INCOMPLETE')
+              require(not any(result['LOG_CATEGORY_COUNTS'].values()) and result['LOG_SEVERE_COUNT'] == 0, 'RUNTIME_LOG_ERRORS_REQUIRE_REVIEW')
+              result['KC09_RUNTIME_PHASE_STATUS'] = 'PASS'
+          except Stop as exc:
+              result['STOP_REASON'] = str(exc)
+              result['KC09_RUNTIME_PHASE_STATUS'] = str(exc) if str(exc) == 'FAIL_SCALING_DRIFT' else 'INCOMPLETE_' + stage
+          except Exception as exc:
+              # Do not serialize exception text, raw gcloud output, HTTP bodies or credentials.
+              result['ERROR_CLASS'] = type(exc).__name__
+              result['KC09_RUNTIME_PHASE_STATUS'] = 'INCOMPLETE_' + stage
+          finally:
+              save()
+              print('KC09_RUNTIME_PHASE_STATUS=' + result['KC09_RUNTIME_PHASE_STATUS'])
+              print('KC09_DEPLOY_COUNT=' + str(result['KC09_DEPLOY_COUNT']))
+          if result['KC09_RUNTIME_PHASE_STATUS'] != 'PASS': raise SystemExit(1)
+
+      - name: Preserve sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kc09-runtime-retirement-result
+          path: ${{ runner.temp }}/kc09-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 30
