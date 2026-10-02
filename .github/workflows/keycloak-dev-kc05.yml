@@ -199,6 +199,18 @@ jobs:
                               "CLOUD_RUN_SERVICE", absent_ok=True)
 
 
+          def service_preflight():
+              listing = metadata(["gcloud", "run", "services", "list",
+                                  "--project=" + PROJECT, "--region=" + REGION],
+                                 "CLOUD_RUN_LIST")
+              if listing == "PERMISSION_LIMITED":
+                  return "PERMISSION_LIMITED"
+              require(isinstance(listing, list), "CLOUD_RUN_LIST_INVALID")
+              return any(item.get("metadata", {}).get("name") == SERVICE
+                         or item.get("name", "").endswith("/services/" + SERVICE)
+                         for item in listing)
+
+
           def pr_guard():
               process = call(["gh", "api", "repos/Visanaz/visana/pulls/20"])
               require(process.returncode == 0, "PR_RECHECK_FAILED")
@@ -341,10 +353,10 @@ jobs:
                                      "SECRET_VERSION_" + name)
                   if version != "PERMISSION_LIMITED":
                       require(version.get("state") == "ENABLED", "SECRET_VERSION_NOT_ENABLED")
-              existing = service_metadata()
-              require(existing is None or existing == "PERMISSION_LIMITED",
+              existing = service_preflight()
+              require(existing is False or existing == "PERMISSION_LIMITED",
                       "SERVICE_ALREADY_EXISTS")
-              result["SERVICE_EXISTS"] = ("NO_BY_METADATA" if existing is None
+              result["SERVICE_EXISTS"] = ("NO_BY_METADATA" if existing is False
                                           else "NO_BY_OWNER_REPORT")
 
               stage = "RENDER"
