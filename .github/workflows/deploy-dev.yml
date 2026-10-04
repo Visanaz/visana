@@ -1,50 +1,111 @@
 name: Deploy Backend to Cloud Run (DEV)
 
 on:
-  push:
-    branches:
-      - dev # Cambia esto si tu rama principal de desarrollo se llama 'main' o 'master'
+  workflow_call:
+    inputs:
+      backend_changed:
+        required: true
+        type: boolean
+    secrets:
+      GCP_PROJECT_ID:
+        required: true
+      GCP_CREDENTIALS:
+        required: true
+      DEV_HEALTHCHECK_CLIENT_SECRET:
+        required: true
 
-env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  REGION: us-central1
-  REPO_NAME: visana-repo
-  SERVICE_NAME: visana-api-dev
+permissions:
+  contents: read
 
 jobs:
   deploy:
+    if: inputs.backend_changed && github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-visana-api-dev
+      cancel-in-progress: false
+    env:
+      PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      REGION: us-central1
+      REPO_NAME: visana-repo
+      SERVICE_NAME: visana-api-dev
+      DB_URL: ${{ vars.DB_URL }}
+      DB_USER: ${{ vars.DB_USER }}
+      DB_PASSWORD_SECRET_REF: ${{ vars.DEV_DB_PASSWORD_SECRET_REF }}
+      DB_CREDENTIAL_ROTATION_CONFIRMED: ${{ vars.DEV_DB_CREDENTIAL_ROTATION_CONFIRMED }}
+      KEYCLOAK_ISSUER_URI: ${{ vars.KEYCLOAK_ISSUER_URI }}
+      RUNTIME_SERVICE_ACCOUNT: ${{ vars.DEV_RUNTIME_SERVICE_ACCOUNT }}
+      HEALTHCHECK_CLIENT_ID: ${{ vars.DEV_HEALTHCHECK_CLIENT_ID }}
+      HEALTHCHECK_SUBJECT: ${{ vars.DEV_HEALTHCHECK_SUBJECT }}
+      HEALTHCHECK_AUDIENCE: ${{ vars.DEV_HEALTHCHECK_AUDIENCE }}
+      CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+      FRONTEND_CLOUD_ENABLED: ${{ vars.DEV_FRONTEND_CLOUD_ENABLED }}
+      HEALTHCHECK_CLIENT_SECRET: ${{ secrets.DEV_HEALTHCHECK_CLIENT_SECRET }}
     steps:
-      - name: 1. Checkout Code
-        uses: actions/checkout@v4
-
-      - name: 2. Autenticar con Google Cloud
-        id: auth
+      - uses: actions/checkout@v4
+      - name: Validate required external configuration without printing values
+        run: python3 -B scripts/ci/cloud_run_dev.py config
+      - name: Download the JAR verified in this workflow run
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-${{ github.sha }}
+          path: .ci-artifact
+      - name: Check artifact provenance and executable classpath
+        run: python3 -B scripts/ci/check_artifact.py .ci-artifact "$GITHUB_SHA"
+      - name: Authenticate using the existing deployment identity
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
-
-      - name: 3. Configurar Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: 4. Configurar Docker Auth
-        run: |-
-          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: 5. Construir y Subir Imagen Docker (Artifact Registry)
-        run: |-
-          IMAGE_TAG=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
-          docker build -t $IMAGE_TAG .
-          docker push $IMAGE_TAG
-
-      - name: 6. Desplegar en Cloud Run
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inspect the existing service and preserve its identity and secret references
+        id: existing
+        run: |
+          umask 077
+          python3 -B scripts/ci/cloud_run_dev.py capture-service "$RUNNER_TEMP/service-before.json"
+          python3 -B scripts/ci/cloud_run_dev.py existing "$RUNNER_TEMP/service-before.json"
+          python3 -B scripts/ci/cloud_run_dev.py token
+      - name: Configure Artifact Registry authentication
+        run: gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+      - name: Publish image and record immutable digest
+        id: image
+        run: |
+          image="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$SERVICE_NAME:$GITHUB_SHA"
+          docker build --platform linux/amd64 --tag "$image" .
+          docker push "$image"
+          digest=$(gcloud artifacts docker images describe "$image" --project="$PROJECT_ID" --format='value(image_summary.digest)')
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo 'Invalid image digest'; exit 1; }
+          echo "reference=${image%:*}@$digest" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Deploy DEV preserving IAM, networking and runtime identity
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ${{ env.SERVICE_NAME }}
-          region: ${{ env.REGION }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
-          env_vars: |
-            SPRING_PROFILES_ACTIVE=dev
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          flags: '--allow-unauthenticated --port=8080'
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service: visana-api-dev
+          region: us-central1
+          suffix: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          image: ${{ steps.image.outputs.reference }}
+          env_vars_file: ${{ runner.temp }}/dev-env.json
+          env_vars_update_strategy: merge
+          secrets: ${{ steps.existing.outputs.db_password_secret }}
+          secrets_update_strategy: merge
+          flags: '--port=8080 --service-account=${{ vars.DEV_RUNTIME_SERVICE_ACCOUNT }} ${{ steps.existing.outputs.db_password_transition }}'
+      - name: Verify this revision, its image digest and authenticated database health
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          SERVICE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          umask 077
+          python3 -B scripts/ci/cloud_run_dev.py capture-revision "$RUNNER_TEMP/revision.json"
+          python3 -B scripts/ci/cloud_run_dev.py capture-service "$RUNNER_TEMP/service-after.json"
+          python3 -B scripts/ci/cloud_run_dev.py revision "$RUNNER_TEMP/revision.json" "$RUNNER_TEMP/service-after.json"
+          python3 -B scripts/ci/cloud_run_dev.py health
+      - name: Sanitized failure summary
+        if: failure()
+        run: |
+          echo 'DEV deployment failed. No full service configuration or application logs are printed.'
+          echo "Inspect service $SERVICE_NAME in region $REGION; candidate revision $SERVICE_NAME-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT."
+      - name: Remove transient configuration and tokens
+        if: always()
+        run: rm -f "$RUNNER_TEMP/service-before.json" "$RUNNER_TEMP/service-after.json" "$RUNNER_TEMP/revision.json" "$RUNNER_TEMP/dev-env.json"

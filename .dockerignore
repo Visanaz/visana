@@ -1,0 +1,6 @@
+# Only the validated executable JAR enters the context: no target, .git, .env,
+# evidence, backups or auth-generated gha-creds-*.json.
+**
+!Dockerfile
+!.ci-artifact/
+!.ci-artifact/app.jar

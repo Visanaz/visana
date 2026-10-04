@@ -40,7 +40,15 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest(classes = PostgreSqlOwnedCommerceIntegrationTest.CommerceTestApplication.class)
 @Testcontainers(disabledWithoutDocker = true)
 class PostgreSqlOwnedCommerceIntegrationTest {
- @Container static final PostgreSQLContainer<?> POSTGRES=new PostgreSQLContainer<>("postgres:16-alpine");
+ @Container static final PostgreSQLContainer<?> POSTGRES=new PostgreSQLContainer<>("postgres:18.3-alpine");
+    @org.junit.jupiter.api.BeforeAll
+    static void verifyRealServerVersion() throws Exception {
+        try (var connection = java.sql.DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            org.junit.jupiter.api.Assertions.assertEquals(18, connection.getMetaData().getDatabaseMajorVersion());
+            System.out.println("POSTGRESQL18_EVIDENCE " + connection.getMetaData().getDatabaseProductVersion());
+        }
+    }
+
  @DynamicPropertySource static void datasource(DynamicPropertyRegistry r){r.add("spring.datasource.url",POSTGRES::getJdbcUrl);r.add("spring.datasource.username",POSTGRES::getUsername);r.add("spring.datasource.password",POSTGRES::getPassword);r.add("spring.jpa.hibernate.ddl-auto",()->"validate");r.add("spring.sql.init.mode",()->"never");}
  @Autowired IdentityProvisioningService provisioning; @Autowired CatalogProductPort catalog; @Autowired OwnedOrderService orders; @Autowired JdbcTemplate jdbc;
  @Test void linkedActorCreatesReadsOwnOrderAndForeignActorIsDeniedOnPostgreSql(){PlatformActor owner=provisioning.provisionAndLink(new ExternalIdentity("OIDC","https://issuer.test","owner"),"test");PlatformActor foreign=provisioning.provisionAndLink(new ExternalIdentity("OIDC","https://issuer.test","foreign"),"test");UUID productId=UUID.randomUUID();Instant now=Instant.now();catalog.save(new CatalogProduct(productId,"SKU-1","CODE-1","Synthetic",null,Money.of("15000"),CatalogProductStatus.ACTIVE,null,now,now));OwnedOrder order=orders.create(owner.id().value(),new CreateOwnedOrderCommand(List.of(new CreateOwnedOrderCommand.Line(productId,2))));assertEquals(0,order.total().amount().compareTo(Money.of("30000").amount()));assertEquals(order.id(),orders.read(owner.id().value(),order.id()).id());assertThrows(OwnershipDeniedException.class,()->orders.read(foreign.id().value(),order.id()));assertEquals(1,jdbc.queryForObject("select count(*) from flyway_schema_history where version = '5'",Integer.class));assertEquals(1,jdbc.queryForObject("select count(*) from flyway_schema_history where version = '6'",Integer.class));assertEquals(1,jdbc.queryForObject("select count(*) from commerce_order_lines",Integer.class));assertTrue(jdbc.queryForObject("select count(*) from platform_audit_events where action = 'ORDER_CREATED'",Integer.class)>=1);}
