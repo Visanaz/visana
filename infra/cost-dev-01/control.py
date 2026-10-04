@@ -1,0 +1,606 @@
+"""Offline COST-DEV-01 controller model. No SDK, network, files, or cloud adapter."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, time, timedelta, timezone
+from enum import Enum
+import json
+from typing import Any, Protocol
+from zoneinfo import ZoneInfo
+
+PROJECT = "visana-erp-dev"
+REGION = "us-central1"
+SQL = "visana-db-dev"
+RUN = "visana-api-dev"
+BUCKET = "visana-erp-dev-schedule-state"
+OBJECT = "cost-dev-01/current.json"
+BOGOTA = ZoneInfo("America/Bogota")
+MAX_STATE_BYTES = 256 * 1024
+RETRY_DELAYS = (5, 15, 30)
+START_LIMIT = timedelta(minutes=15)
+BACKUP_AGE_LIMIT = timedelta(hours=24)
+ALLOWLIST = {"projectId": PROJECT, "region": REGION, "sqlInstance": SQL,
+             "runService": RUN, "stateBucket": BUCKET, "stateObject": OBJECT}
+
+
+# Exact R1 values; external schedule.json is validated against this contract.
+SCHEDULE_CONTRACT = {
+    "timeZone": "America/Bogota", "weekdays": [1, 2, 3, 4, 5],
+    "sqlStart": "07:30", "closeNotice": "17:30", "qaFreeze": "17:45",
+    "quiescenceTarget": "18:00", "backupWindowStart": "18:00",
+    "backupWindowLastStart": "22:00", "stopDeadline": "23:00",
+    "backupPollMinutes": 15, "startDeadlineMinutes": 15,
+    "retryDelaysSeconds": [5, 15, 30],
+}
+
+
+def validate_schedule(schedule: dict) -> dict:
+    if schedule != SCHEDULE_CONTRACT:
+        raise ControlError("R1_SCHEDULE_MISMATCH")
+    return dict(schedule)
+
+
+class ControlError(Exception):
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
+class State(str, Enum):
+    OFF = "OFF"
+    STARTING_SQL = "STARTING_SQL"
+    WAITING_SQL = "WAITING_SQL"
+    STARTING_SERVICES = "STARTING_SERVICES"
+    ON = "ON"
+    FREEZING = "FREEZING"
+    QUIESCING = "QUIESCING"
+    WAITING_BACKUP = "WAITING_BACKUP"
+    STOPPING_SERVICES = "STOPPING_SERVICES"
+    STOPPING_SQL = "STOPPING_SQL"
+    ERROR = "ERROR"
+    MANUAL_HOLD = "MANUAL_HOLD"
+
+
+class Operation(str, Enum):
+    START_DEV = "START_DEV"
+    STOP_DEV = "STOP_DEV"
+    STATUS = "STATUS"
+    DRY_RUN_START = "DRY_RUN_START"
+    DRY_RUN_STOP = "DRY_RUN_STOP"
+
+
+NEXT = {
+    State.OFF: {State.STARTING_SQL},
+    State.STARTING_SQL: {State.WAITING_SQL, State.ERROR},
+    State.WAITING_SQL: {State.STARTING_SERVICES, State.ERROR},
+    State.STARTING_SERVICES: {State.ON, State.ERROR},
+    State.ON: {State.FREEZING},
+    State.FREEZING: {State.STOPPING_SERVICES, State.MANUAL_HOLD},
+    State.STOPPING_SERVICES: {State.QUIESCING, State.MANUAL_HOLD},
+    State.QUIESCING: {State.WAITING_BACKUP, State.MANUAL_HOLD},
+    State.WAITING_BACKUP: {State.STOPPING_SQL, State.MANUAL_HOLD},
+    State.STOPPING_SQL: {State.OFF, State.ERROR},
+    State.ERROR: set(), State.MANUAL_HOLD: set(),
+}
+
+
+def as_utc(value: datetime) -> datetime:
+    if not isinstance(value, datetime) or value.tzinfo is None:
+        raise ControlError("INVALID_TIME")
+    return value.astimezone(timezone.utc)
+
+
+def stamp(value: datetime) -> str:
+    return as_utc(value).isoformat().replace("+00:00", "Z")
+
+
+def read_time(value: str) -> datetime:
+    try:
+        return as_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ControlError("INVALID_TIME") from exc
+
+
+def parse_request(request: dict[str, Any]) -> tuple[Operation, bool, str, str]:
+    if not isinstance(request, dict):
+        raise ControlError("INVALID_REQUEST")
+    if set(request) - (set(ALLOWLIST) | {"operation", "dryRun", "executionId", "requestedBy"}):
+        raise ControlError("UNSUPPORTED_INPUT")
+    if any(request[k] != v for k, v in ALLOWLIST.items() if k in request):
+        raise ControlError("DEV_ALLOWLIST_MISMATCH")
+    try:
+        op = Operation(request["operation"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ControlError("INVALID_OPERATION") from exc
+    dry = request.get("dryRun", True)
+    if type(dry) is not bool:
+        raise ControlError("INVALID_DRY_RUN")
+    if op in (Operation.DRY_RUN_START, Operation.DRY_RUN_STOP):
+        dry = True
+    eid, actor = request.get("executionId"), request.get("requestedBy")
+    if not isinstance(eid, str) or not 1 <= len(eid) <= 128 or not eid.isascii() or not eid.replace("-", "").replace("_", "").isalnum():
+        raise ControlError("INVALID_EXECUTION_ID")
+    if not isinstance(actor, str) or not 1 <= len(actor) <= 128 or any(c in actor for c in "\r\n"):
+        raise ControlError("INVALID_REQUESTED_BY")
+    return op, dry, eid, actor
+
+
+STATE_KEYS = {"schemaVersion", "environment", "projectId", "operation", "state",
+              "executionId", "eventId", "startedAt", "updatedAt", "requestedBy",
+              "dryRun", "fence", "leaseUntil", "previousState",
+              "lastSuccessfulBackup", "resourceSnapshot", "errorCode"}
+
+
+def validate_state(doc: dict[str, Any]) -> State:
+    if not isinstance(doc, dict) or set(doc) - STATE_KEYS:
+        raise ControlError("CORRUPT_STATE")
+    if doc.get("schemaVersion") != 1 or doc.get("environment") != "DEV" or doc.get("projectId") != PROJECT or doc.get("dryRun") is not False:
+        raise ControlError("CORRUPT_STATE")
+    try:
+        state = State(doc["state"])
+        Operation(doc["operation"])
+        read_time(doc["startedAt"])
+        read_time(doc["updatedAt"])
+        read_time(doc["leaseUntil"])
+    except (KeyError, ValueError, TypeError, ControlError) as exc:
+        raise ControlError("CORRUPT_STATE") from exc
+    if not isinstance(doc.get("executionId"), str) or not doc["executionId"]:
+        raise ControlError("CORRUPT_STATE")
+    if not isinstance(doc.get("fence"), int) or doc["fence"] < 1:
+        raise ControlError("CORRUPT_STATE")
+    snapshot = doc.get("resourceSnapshot", {})
+    if not isinstance(snapshot, dict) or set(snapshot) - {"mode", "min", "max", "manual"}:
+        raise ControlError("CORRUPT_STATE")
+    if snapshot:
+        if snapshot.get("mode") not in ("AUTOMATIC", "MANUAL"):
+            raise ControlError("CORRUPT_STATE")
+        for key in ("min", "max"):
+            if type(snapshot.get(key)) is not int or snapshot[key] < 0:
+                raise ControlError("CORRUPT_STATE")
+        if snapshot.get("manual") is not None and (type(snapshot["manual"]) is not int or snapshot["manual"] < 0):
+            raise ControlError("CORRUPT_STATE")
+    if len(json.dumps(doc, separators=(",", ":"), ensure_ascii=False).encode()) > MAX_STATE_BYTES:
+        raise ControlError("STATE_TOO_LARGE")
+    return state
+
+
+@dataclass(frozen=True)
+class Stored:
+    document: dict[str, Any]
+    generation: int
+
+
+class Store(Protocol):
+    def read(self) -> Stored | None: ...
+    def cas(self, document: dict[str, Any], generation_match: int) -> Stored: ...
+
+
+@dataclass
+class MemoryStore:
+    """Generation-matching test double, including generationMatch=0 on first insert."""
+    item: Stored | None = None
+    matches: list[int] = field(default_factory=list)
+    conflict_once: bool = False
+
+    def read(self) -> Stored | None:
+        return self.item
+
+    def cas(self, document: dict[str, Any], generation_match: int) -> Stored:
+        if self.conflict_once:
+            self.conflict_once = False
+            raise ControlError("CAS_CONFLICT")
+        current = self.item.generation if self.item else 0
+        if current != generation_match:
+            raise ControlError("CAS_CONFLICT")
+        validate_state(document)
+        self.item = Stored(json.loads(json.dumps(document)), current + 1)
+        self.matches.append(generation_match)
+        return self.item
+
+
+@dataclass(frozen=True)
+class Backup:
+    backup_id: str | None
+    status: str
+    started_at: datetime | None
+    ended_at: datetime | None
+    recoverable_through: datetime | None
+
+
+@dataclass(frozen=True)
+class StopEvidence:
+    deployments_idle: bool
+    sql_operations_idle: bool
+    writers_quiesced: bool
+    transactions_zero: bool
+    consumers_quiesced: bool
+    tags_safe: bool
+    fence_at: datetime | None
+    last_write_at: datetime | None
+    backup: Backup | None
+    a06_fence: FenceEvidence | None = None
+    a06_quiescence: QuiescenceEvidence | None = None
+    a06_backup: BackupMetadata | None = None
+    no_later_writes: bool | None = None
+    recovery_coverage_confirmed: bool | None = None
+
+
+class Gate(str, Enum):
+    ALLOW = "ALLOW"
+    DENY = "DENY"
+    UNKNOWN = "UNKNOWN"
+
+
+class Coverage(str, Enum):
+    COVERED = "COVERED"
+    NOT_COVERED = "NOT_COVERED"
+    UNKNOWN = "UNKNOWN"
+
+
+@dataclass(frozen=True)
+class FenceEvidence:
+    logical_fence_owned: bool | None
+    run_manual_zero: bool | None
+    run_operation_complete: bool | None
+    all_write_routes_blocked: bool | None  # Includes every traffic tag/revision.
+
+
+@dataclass(frozen=True)
+class QuiescenceEvidence:
+    effective_fence: bool | None
+    deployments_idle: bool | None
+    sql_operations_idle: bool | None
+    controller_transition_idle: bool | None
+    drain_complete: bool | None
+    active_writes_zero: bool | None
+    other_consumers_idle: bool | None
+
+
+@dataclass(frozen=True)
+class BackupMetadata:
+    backup_id: str | None
+    status: str | None
+    start_time: datetime | None
+    end_time: datetime | None
+    backup_type: str | None
+    error: str | None
+    instance: str | None
+    queried_at: datetime | None
+
+
+@dataclass(frozen=True)
+class HealthEvidence:
+    revision_ready: bool | None
+    resolved_url: bool | None
+    technical_token_valid: bool | None
+    http_status: int | None
+    body_status: str | None
+    datasource_included: bool | None
+    datasource_status: str | None
+    idp_status: str | None
+    timed_out: bool = False
+
+
+@dataclass(frozen=True)
+class HealthAssessment:
+    process_ready: Gate
+    application_healthy: Gate
+    database_healthy: Gate
+    overall: Gate
+
+
+def _all_required(*signals: bool | None) -> Gate:
+    if any(value is False for value in signals):
+        return Gate.DENY
+    if any(value is not True for value in signals):
+        return Gate.UNKNOWN
+    return Gate.ALLOW
+
+
+def evaluate_fence(evidence: FenceEvidence) -> Gate:
+    """CAS ownership is only a logical fence; Run zero and all routes prove the write fence."""
+    return _all_required(evidence.logical_fence_owned, evidence.run_manual_zero,
+                         evidence.run_operation_complete, evidence.all_write_routes_blocked)
+
+
+def evaluate_quiescence(evidence: QuiescenceEvidence) -> Gate:
+    """Drain duration alone never proves that all accepted writes completed."""
+    return _all_required(evidence.effective_fence, evidence.deployments_idle,
+                         evidence.sql_operations_idle, evidence.controller_transition_idle,
+                         evidence.drain_complete, evidence.active_writes_zero,
+                         evidence.other_consumers_idle)
+
+
+def evaluate_backup_coverage(
+    backup: BackupMetadata | None, *, fence_established_at: datetime | None,
+    last_accepted_write_at: datetime | None, no_later_writes: bool | None,
+    recovery_coverage_confirmed: bool | None,
+) -> Coverage:
+    """R1 automatic backup after fence/write; API metadata alone cannot prove restoration."""
+    if backup is None or fence_established_at is None:
+        return Coverage.UNKNOWN
+    if backup.instance is not None and backup.instance != SQL:
+        return Coverage.NOT_COVERED
+    if backup.status is not None and backup.status != "SUCCESSFUL":
+        return Coverage.NOT_COVERED
+    if backup.backup_type is not None and backup.backup_type != "AUTOMATED":
+        return Coverage.NOT_COVERED
+    if backup.error is not None or no_later_writes is False or recovery_coverage_confirmed is False:
+        return Coverage.NOT_COVERED
+    if not backup.backup_id or not backup.instance or not backup.status or not backup.backup_type:
+        return Coverage.UNKNOWN
+    if not backup.start_time or not backup.end_time or not backup.queried_at:
+        return Coverage.UNKNOWN
+    try:
+        fence = as_utc(fence_established_at)
+        start, end, queried = map(as_utc, (backup.start_time, backup.end_time, backup.queried_at))
+        last = as_utc(last_accepted_write_at) if last_accepted_write_at else None
+    except ControlError:
+        return Coverage.UNKNOWN
+    if last is not None and last > fence:
+        return Coverage.NOT_COVERED
+    target = max(fence, last) if last else fence
+    local_start, local_fence = start.astimezone(BOGOTA), fence.astimezone(BOGOTA)
+    window_start = datetime.combine(local_fence.date(), time(18, 0), BOGOTA)
+    window_end = datetime.combine(local_fence.date(), time(22, 0), BOGOTA)
+    deadline = datetime.combine(local_fence.date(), time(23, 0), BOGOTA)
+    if (start <= target or end < start or end > queried or queried - end > BACKUP_AGE_LIMIT
+            or not window_start <= local_start <= window_end
+            or queried.astimezone(BOGOTA) >= deadline):
+        return Coverage.NOT_COVERED
+    if no_later_writes is not True or recovery_coverage_confirmed is not True:
+        return Coverage.UNKNOWN
+    return Coverage.COVERED
+
+
+def evaluate_authenticated_health(evidence: HealthEvidence) -> HealthAssessment:
+    process = _all_required(evidence.revision_ready, evidence.resolved_url)
+    if evidence.idp_status != "READY":
+        app = Gate.UNKNOWN if evidence.idp_status in (None, "NOT_PROVISIONED") else Gate.DENY
+    elif evidence.timed_out or evidence.http_status in (401, 403):
+        app = Gate.DENY
+    else:
+        app = _all_required(evidence.technical_token_valid,
+                            evidence.http_status == 200 if evidence.http_status is not None else None,
+                            evidence.body_status == "UP" if evidence.body_status is not None else None)
+    db = _all_required(evidence.datasource_included,
+                       evidence.datasource_status == "UP" if evidence.datasource_status is not None else None)
+    return HealthAssessment(process, app, db, _combine_gates(process, app, db))
+
+
+def _combine_gates(*gates: Gate | Coverage) -> Gate:
+    if any(gate in (Gate.DENY, Coverage.NOT_COVERED) for gate in gates):
+        return Gate.DENY
+    if any(gate in (Gate.UNKNOWN, Coverage.UNKNOWN) for gate in gates):
+        return Gate.UNKNOWN
+    if all(gate in (Gate.ALLOW, Coverage.COVERED) for gate in gates):
+        return Gate.ALLOW
+    return Gate.UNKNOWN
+
+
+def can_stop_dev(fence: Gate, quiescence: Gate, backup: Coverage) -> Gate:
+    """Only three affirmative A-06 gates make STOP eligible; UNKNOWN blocks it."""
+    if type(fence) is not Gate or type(quiescence) is not Gate or type(backup) is not Coverage:
+        return Gate.UNKNOWN
+    return _combine_gates(fence, quiescence, backup)
+
+
+def verify_stop(e: StopEvidence, now: datetime, stop_deadline: str) -> str:
+    now = as_utc(now)
+    if not all((e.deployments_idle, e.sql_operations_idle, e.writers_quiesced,
+                e.transactions_zero, e.consumers_quiesced, e.tags_safe)):
+        raise ControlError("QUIESCENCE_UNPROVEN")
+    if e.fence_at is None or e.last_write_at is None:
+        raise ControlError("FENCE_UNPROVEN")
+    fence, last_write = as_utc(e.fence_at), as_utc(e.last_write_at)
+    local_fence = fence.astimezone(BOGOTA)
+    deadline = datetime.combine(local_fence.date(), time.fromisoformat(stop_deadline), BOGOTA)
+    if now.astimezone(BOGOTA) >= deadline:
+        raise ControlError("BACKUP_DEADLINE")
+    if last_write > fence:
+        raise ControlError("WRITE_AFTER_FENCE")
+    b = e.backup
+    if b is None or not b.backup_id:
+        raise ControlError("BACKUP_MISSING")
+    if b.status != "SUCCESSFUL":
+        raise ControlError("BACKUP_NOT_SUCCESSFUL")
+    if not (b.started_at and b.ended_at and b.recoverable_through):
+        raise ControlError("BACKUP_COVERAGE_UNPROVEN")
+    started, ended, covered = as_utc(b.started_at), as_utc(b.ended_at), as_utc(b.recoverable_through)
+    if started < fence or ended < started or covered < fence or ended > now or now - ended > BACKUP_AGE_LIMIT:
+        raise ControlError("BACKUP_TOO_OLD")
+    return b.backup_id
+
+
+def safe_log(**fields: Any) -> dict[str, Any]:
+    codes = {"operation", "resource", "previousState", "newState", "status", "errorCode"}
+    allowed = codes | {"executionId", "dryRun", "duration"}
+    result = {}
+    for key in allowed & fields.keys():
+        value = fields[key]
+        if key in {"dryRun", "duration"} and isinstance(value, (bool, int, float)):
+            result[key] = value
+        elif isinstance(value, str) and value.isascii() and value.replace("_", "").replace("-", "").isalnum():
+            result[key] = value
+        else:
+            result[key] = "REDACTED"
+    return result
+
+
+def plan(op: Operation, state: State | None) -> tuple[str, ...]:
+    if op in (Operation.START_DEV, Operation.DRY_RUN_START):
+        return ("NO_OP_ON",) if state == State.ON else (
+            "VALIDATE_ALLOWLIST", "READ_STATE", "CHECK_SQL", "START_SQL_IF_OFF",
+            "WAIT_SQL_READY", "CHECK_KEYCLOAK_IF_PROVISIONED", "RESTORE_RUN_SCALING",
+            "CHECK_HEALTH", "MARK_ON")
+    if op in (Operation.STOP_DEV, Operation.DRY_RUN_STOP):
+        return ("NO_OP_OFF",) if state == State.OFF else (
+            "VALIDATE_ALLOWLIST", "READ_STATE", "FREEZE_CI_QA",
+            "FENCE_RUN_MANUAL_ZERO", "VERIFY_TAGS_AND_DEPLOYMENTS",
+            "DRAIN_AND_VERIFY_QUIESCENCE", "VERIFY_NEW_RECOVERABLE_BACKUP",
+            "FINAL_REVALIDATION",
+            "STOP_SQL_LAST", "MARK_OFF")
+    return ("READ_STATE",)
+
+
+class Runtime(Protocol):
+    def sql_running(self) -> bool: ...
+    def start_sql(self) -> None: ...
+    def sql_ready(self) -> bool: ...
+    def wait(self, seconds: int) -> None: ...
+    def keycloak_status(self) -> str: ...
+    def run_snapshot(self) -> dict[str, Any]: ...
+    def start_run(self, snapshot: dict[str, Any]) -> None: ...
+    def health_ready(self) -> bool: ...
+    def stop_evidence(self) -> StopEvidence: ...
+    def stop_run(self) -> None: ...
+    def stop_sql(self) -> None: ...
+
+
+class Controller:
+    def __init__(self, store: Store, runtime: Runtime, now, schedule: dict):
+        self.store, self.runtime, self.now = store, runtime, now
+        self.schedule = validate_schedule(schedule)
+
+    def transition(self, item: Stored, next_state: State, eid: str, op: Operation,
+                   actor: str, error: str | None = None,
+                   snapshot: dict[str, Any] | None = None,
+                   backup_id: str | None = None) -> Stored:
+        prior = validate_state(item.document)
+        if next_state not in NEXT[prior]:
+            raise ControlError("INVALID_TRANSITION")
+        doc = dict(item.document)
+        doc.update(state=next_state.value, previousState=prior.value, updatedAt=stamp(self.now()),
+                   executionId=eid, operation=op.value, requestedBy=actor, errorCode=error)
+        if snapshot is not None:
+            doc["resourceSnapshot"] = snapshot
+        if backup_id is not None:
+            doc["lastSuccessfulBackup"] = backup_id
+        try:
+            return self.store.cas(doc, item.generation)
+        except ControlError as exc:
+            if exc.code == "CAS_CONFLICT":
+                latest = self.store.read()
+                if latest and latest.document.get("executionId") != eid:
+                    raise ControlError("CONCURRENT_EXECUTION") from exc
+            raise
+
+    def execute(self, request: dict[str, Any]) -> dict[str, Any]:
+        op, dry, eid, actor = parse_request(request)
+        item = self.store.read()
+        state = validate_state(item.document) if item else None
+        if dry or op == Operation.STATUS:
+            return {"status": "DRY_RUN" if dry else "STATUS", "dryRun": dry,
+                    "state": state.value if state else "UNINITIALIZED", "plan": plan(op, state),
+                    "generation": item.generation if item else None}
+        if item and item.document["executionId"] == eid:
+            if item.document["operation"] != op.value:
+                raise ControlError("EXECUTION_ID_REUSED")
+            return {"status": "DUPLICATE", "state": state.value}
+        if state not in (None, State.OFF, State.ON):
+            raise ControlError("MANUAL_RECOVERY_REQUIRED")
+        if op == Operation.START_DEV:
+            if state == State.ON:
+                return {"status": "NO_OP_ON"}
+            return self.start(item, eid, op, actor)
+        if op == Operation.STOP_DEV:
+            if state == State.OFF:
+                return {"status": "NO_OP_OFF"}
+            if item is None:
+                raise ControlError("STATE_UNINITIALIZED")
+            return self.stop(item, eid, op, actor)
+        raise ControlError("INVALID_OPERATION")
+
+    def start(self, item: Stored | None, eid: str, op: Operation, actor: str) -> dict[str, Any]:
+        now = stamp(self.now())
+        restore = dict(item.document["resourceSnapshot"]) if item is not None else None
+        if restore is not None and not restore:
+            raise ControlError("SNAPSHOT_UNAVAILABLE")
+        if item is None:
+            doc = {"schemaVersion": 1, "environment": "DEV", "projectId": PROJECT,
+                   "operation": op.value, "state": State.STARTING_SQL.value, "previousState": State.OFF.value,
+                   "executionId": eid, "eventId": eid, "startedAt": now, "updatedAt": now,
+                   "requestedBy": actor, "dryRun": False, "fence": 1,
+                   "leaseUntil": stamp(self.now() + timedelta(minutes=self.schedule["startDeadlineMinutes"])),
+                   "lastSuccessfulBackup": None, "resourceSnapshot": {}, "errorCode": None}
+            item = self.store.cas(doc, 0)
+        else:
+            doc = dict(item.document)
+            doc.update(fence=doc["fence"] + 1, startedAt=now, updatedAt=now,
+                       leaseUntil=stamp(self.now() + timedelta(minutes=self.schedule["startDeadlineMinutes"])), state=State.STARTING_SQL.value,
+                       previousState=State.OFF.value, operation=op.value,
+                       executionId=eid, eventId=eid, requestedBy=actor, errorCode=None)
+            item = self.store.cas(doc, item.generation)
+        try:
+            if not self.runtime.sql_running():
+                self.runtime.start_sql()
+            item = self.transition(item, State.WAITING_SQL, eid, op, actor)
+            for attempt in range(len(self.schedule["retryDelaysSeconds"]) + 1):
+                if as_utc(self.now()) >= read_time(item.document["leaseUntil"]):
+                    raise ControlError("START_TIMEOUT")
+                if self.runtime.sql_ready():
+                    break
+                if attempt == len(self.schedule["retryDelaysSeconds"]):
+                    raise ControlError("SQL_NOT_READY")
+                self.runtime.wait(self.schedule["retryDelaysSeconds"][attempt])
+            if self.runtime.keycloak_status() not in ("NOT_PROVISIONED", "READY"):
+                raise ControlError("KEYCLOAK_NOT_READY")
+            item = self.transition(item, State.STARTING_SERVICES, eid, op, actor)
+            snapshot = restore if restore is not None else self.runtime.run_snapshot()
+            # Check and persist the scaling-only snapshot before any Run mutation.
+            proposed = dict(item.document)
+            proposed["resourceSnapshot"] = snapshot
+            validate_state(proposed)
+            item = self.store.cas(proposed, item.generation)
+            self.runtime.start_run(snapshot)
+            if not self.runtime.health_ready():
+                raise ControlError("HEALTH_NOT_READY")
+            item = self.transition(item, State.ON, eid, op, actor, snapshot=snapshot)
+            return {"status": "ON", "generation": item.generation}
+        except ControlError as exc:
+            latest = self.store.read()
+            if latest and latest.document.get("executionId") == eid:
+                state = validate_state(latest.document)
+                if State.ERROR in NEXT[state]:
+                    self.transition(latest, State.ERROR, eid, op, actor, error=exc.code)
+            raise
+
+    def stop(self, item: Stored, eid: str, op: Operation, actor: str) -> dict[str, Any]:
+        try:
+            item = self.transition(item, State.FREEZING, eid, op, actor)
+            item = self.transition(item, State.STOPPING_SERVICES, eid, op, actor)
+            # In the offline port this is the proposed operational write fence.
+            # No cloud adapter is provided, and this call does not prove tags safe.
+            self.runtime.stop_run()
+            item = self.transition(item, State.QUIESCING, eid, op, actor)
+            first = self.runtime.stop_evidence()
+            item = self.transition(item, State.WAITING_BACKUP, eid, op, actor)
+            backup_id = verify_stop(first, self.now(), self.schedule["stopDeadline"])
+            fence_gate = evaluate_fence(first.a06_fence) if first.a06_fence else Gate.UNKNOWN
+            quiescence_gate = (evaluate_quiescence(first.a06_quiescence)
+                               if first.a06_quiescence else Gate.UNKNOWN)
+            coverage_gate = evaluate_backup_coverage(
+                first.a06_backup, fence_established_at=first.fence_at,
+                last_accepted_write_at=first.last_write_at,
+                no_later_writes=first.no_later_writes,
+                recovery_coverage_confirmed=first.recovery_coverage_confirmed)
+            if can_stop_dev(fence_gate, quiescence_gate, coverage_gate) != Gate.ALLOW:
+                raise ControlError("A06_STOP_NOT_ALLOWED")
+            if self.runtime.stop_evidence() != first:
+                raise ControlError("STOP_EVIDENCE_CHANGED")
+            if not self.runtime.stop_evidence().tags_safe:
+                raise ControlError("TAGS_UNSAFE")
+            item = self.transition(item, State.STOPPING_SQL, eid, op, actor)
+            if self.runtime.stop_evidence() != first:
+                raise ControlError("STOP_EVIDENCE_CHANGED")
+            self.runtime.stop_sql()
+            item = self.transition(item, State.OFF, eid, op, actor, backup_id=backup_id)
+            return {"status": "OFF", "backupId": backup_id, "generation": item.generation}
+        except ControlError as exc:
+            latest = self.store.read()
+            if latest and latest.document.get("executionId") == eid:
+                state = validate_state(latest.document)
+                hold = State.MANUAL_HOLD if State.MANUAL_HOLD in NEXT[state] else State.ERROR
+                if hold in NEXT[state]:
+                    self.transition(latest, hold, eid, op, actor, error=exc.code)
+            raise

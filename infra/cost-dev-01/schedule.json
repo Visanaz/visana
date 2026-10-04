@@ -1,0 +1,14 @@
+{
+  "timeZone": "America/Bogota",
+  "weekdays": [1, 2, 3, 4, 5],
+  "sqlStart": "07:30",
+  "closeNotice": "17:30",
+  "qaFreeze": "17:45",
+  "quiescenceTarget": "18:00",
+  "backupWindowStart": "18:00",
+  "backupWindowLastStart": "22:00",
+  "stopDeadline": "23:00",
+  "backupPollMinutes": 15,
+  "startDeadlineMinutes": 15,
+  "retryDelaysSeconds": [5, 15, 30]
+}
