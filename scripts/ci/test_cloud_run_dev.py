@@ -3,12 +3,14 @@ import copy
 import unittest
 from cloud_run_dev import prepare_existing, validate_config, verify_revision, safe_spec, capture, secret_reference
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from types import SimpleNamespace
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
 import urllib.error
-from cloud_run_dev import run, password_transition_flag, validate_cors, verify_health
+from cloud_run_dev import run, main, password_transition_flag, cors_transition_flag, validate_cors, verify_health
 
 
 class DeploymentGuardsTest(unittest.TestCase):
@@ -113,7 +115,7 @@ class DeploymentGuardsTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 prepare_existing(bad, self.env)
 
-    def test_rejects_ready_but_wrong_digest_or_old_traffic(self):
+    def valid_revision(self):
         revision = {"metadata": {"name": "service-ci-123-1"},
                     "status": {"conditions": [{"type": "Ready", "status": "True"}], "imageDigest": self.env["IMAGE_DIGEST"]},
                     "spec": {"serviceAccountName": self.env["RUNTIME_SERVICE_ACCOUNT"], "containers": [{
@@ -122,10 +124,13 @@ class DeploymentGuardsTest(unittest.TestCase):
                          ("KEYCLOAK_ISSUER_URI", self.env["KEYCLOAK_ISSUER_URI"]),
                          ("DEV_HEALTHCHECK_CLIENT_ID", self.env["HEALTHCHECK_CLIENT_ID"]),
                          ("DEV_HEALTHCHECK_SUBJECT", self.env["HEALTHCHECK_SUBJECT"]),
-                         ("DEV_HEALTHCHECK_AUDIENCE", self.env["HEALTHCHECK_AUDIENCE"]),
-                         ("CORS_ALLOWED_ORIGINS", ""))] +
+                         ("DEV_HEALTHCHECK_AUDIENCE", self.env["HEALTHCHECK_AUDIENCE"]))] +
                          [{"name": "DB_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "rotated-secret", "key": "3"}}}]}]}}
         service = {"status": {"traffic": [{"revisionName": "service-ci-123-1", "percent": 100}]}}
+        return revision, service
+
+    def test_rejects_ready_but_wrong_digest_or_old_traffic(self):
+        revision, service = self.valid_revision()
         verify_revision(revision, service, self.env)
         bad = copy.deepcopy(revision)
         bad["status"]["imageDigest"] = "sha256:" + "b" * 64
@@ -139,7 +144,7 @@ class DeploymentGuardsTest(unittest.TestCase):
         with self.assertRaises(ValueError): validate_cors({"FRONTEND_CLOUD_ENABLED": "true"})
         origins = "https://frontend.example.invalid,https://qa.example.invalid"
         self.assertEqual(validate_cors({"CORS_ALLOWED_ORIGINS": origins, "FRONTEND_CLOUD_ENABLED": "true"}), origins)
-        values, _ = prepare_existing(self.service, dict(self.env, CORS_ALLOWED_ORIGINS=origins))
+        values, _ = prepare_existing(self.service, dict(self.env, CORS_ALLOWED_ORIGINS=origins, FRONTEND_CLOUD_ENABLED="true"))
         self.assertEqual(values["CORS_ALLOWED_ORIGINS"], origins)
         for origin in ("*", "https://*.example.invalid", "null", "http://localhost:4200", "https://127.0.0.2",
                        "https://localhost", "https://app.localhost", "https://[::1]", "https://0.0.0.0",
@@ -148,6 +153,77 @@ class DeploymentGuardsTest(unittest.TestCase):
                        origins + ",", " https://app.example.invalid", "https://app.example.invalid:invalid"):
             with self.subTest(origin=origin), self.assertRaisesRegex(ValueError, "values withheld"):
                 validate_cors({"CORS_ALLOWED_ORIGINS": origin})
+
+    def test_backend_only_payload_omits_cors(self):
+        for updates in ({}, {"CORS_ALLOWED_ORIGINS": ""},
+                        {"CORS_ALLOWED_ORIGINS": "", "FRONTEND_CLOUD_ENABLED": "false"}):
+            with self.subTest(updates=updates):
+                values, _ = prepare_existing(self.service, dict(self.env, **updates))
+                self.assertNotIn("CORS_ALLOWED_ORIGINS", values)
+
+    def test_cors_transition_removes_only_existing_cors_when_desired_empty(self):
+        container = self.service["spec"]["template"]["spec"]["containers"][0]
+        container["env"] = [{"name": "UNRELATED", "value": "keep"}]
+        self.assertEqual(cors_transition_flag(self.service, self.env), "")
+        for old in ("", "https://stale.example.invalid"):
+            container["env"] = [{"name": "UNRELATED", "value": "keep"},
+                                {"name": "CORS_ALLOWED_ORIGINS", "value": old}]
+            before = copy.deepcopy(self.service)
+            self.assertEqual(cors_transition_flag(self.service, self.env), "--remove-env-vars=CORS_ALLOWED_ORIGINS")
+            self.assertEqual(cors_transition_flag(self.service, dict(self.env, CORS_ALLOWED_ORIGINS="https://approved.example.invalid")), "")
+            self.assertEqual(self.service, before)
+        with self.assertRaises(ValueError):
+            cors_transition_flag(self.service, dict(self.env, CORS_ALLOWED_ORIGINS="*"))
+
+    def test_existing_action_serializes_no_empty_values_and_only_safe_outputs(self):
+        for existing_cors in (False, True):
+            with self.subTest(existing_cors=existing_cors), TemporaryDirectory() as directory:
+                root = Path(directory)
+                source, output = root / "service.json", root / "outputs"
+                service = copy.deepcopy(self.service)
+                variables = [{"name": "DB_PASSWORD", "value": "synthetic-old-password"}]
+                if existing_cors:
+                    variables.append({"name": "CORS_ALLOWED_ORIGINS", "value": "https://stale.example.invalid"})
+                service["spec"]["template"]["spec"]["containers"][0]["env"] = variables
+                source.write_text(json.dumps(service))
+                env = dict(self.env, RUNNER_TEMP=directory, GITHUB_OUTPUT=str(output), CORS_ALLOWED_ORIGINS="")
+                stdout = StringIO()
+                with patch.dict("cloud_run_dev.os.environ", env, clear=True), \
+                        patch("cloud_run_dev.sys.argv", ["cloud_run_dev.py", "existing", str(source)]), redirect_stdout(stdout):
+                    main()
+                payload = json.loads((root / "dev-env.json").read_text())
+                self.assertNotIn("", payload.values(), "deploy-cloudrun rejects empty JSON env values")
+                self.assertNotIn("CORS_ALLOWED_ORIGINS", payload)
+                self.assertEqual(output.read_text().splitlines(), [
+                    "db_password_secret=DB_PASSWORD=rotated-secret:3",
+                    "db_password_transition=--remove-env-vars=DB_PASSWORD",
+                    "cors_transition=" + ("--remove-env-vars=CORS_ALLOWED_ORIGINS" if existing_cors else "")])
+                self.assertEqual(stdout.getvalue(), "DEV guard passed: existing\n")
+
+    def test_backend_only_revision_requires_absent_cors(self):
+        revision, service = self.valid_revision()
+        verify_revision(revision, service, self.env)
+        for entry in ({"name": "CORS_ALLOWED_ORIGINS", "value": ""},
+                      {"name": "CORS_ALLOWED_ORIGINS", "value": "https://stale.example.invalid"},
+                      {"name": "CORS_ALLOWED_ORIGINS", "valueFrom": {"secretKeyRef": {"name": "synthetic", "key": "1"}}}):
+            with self.subTest(entry=entry):
+                bad = copy.deepcopy(revision)
+                bad["spec"]["containers"][0]["env"].append(entry)
+                with self.assertRaisesRegex(ValueError, "configuration mismatch: CORS_ALLOWED_ORIGINS"):
+                    verify_revision(bad, service, self.env)
+
+    def test_frontend_revision_requires_exact_approved_cors(self):
+        origins = "https://frontend.example.invalid,https://qa.example.invalid"
+        env = dict(self.env, CORS_ALLOWED_ORIGINS=origins, FRONTEND_CLOUD_ENABLED="true")
+        revision, service = self.valid_revision()
+        with self.assertRaisesRegex(ValueError, "configuration mismatch: CORS_ALLOWED_ORIGINS"):
+            verify_revision(revision, service, env)
+        revision["spec"]["containers"][0]["env"].append({"name": "CORS_ALLOWED_ORIGINS", "value": origins})
+        verify_revision(revision, service, env)
+        for wrong in ("", "https://frontend.example.invalid", "https://stale.example.invalid"):
+            revision["spec"]["containers"][0]["env"][-1]["value"] = wrong
+            with self.assertRaisesRegex(ValueError, "configuration mismatch: CORS_ALLOWED_ORIGINS"):
+                verify_revision(revision, service, env)
 
     def test_health_requires_application_and_visible_database_up(self):
         verify_health({"status": "UP", "components": {"db": {"status": "UP"}}})

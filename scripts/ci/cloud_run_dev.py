@@ -132,8 +132,10 @@ def prepare_existing(service, env):
     if container.get("command") or container.get("args"):
         raise GuardError("Existing command/arguments require review before using the image ENTRYPOINT")
     values = {"SPRING_PROFILES_ACTIVE": "dev", "DB_URL": env["DB_URL"],
-              "DB_USER": env["DB_USER"], "KEYCLOAK_ISSUER_URI": env["KEYCLOAK_ISSUER_URI"],
-              "CORS_ALLOWED_ORIGINS": validate_cors(env)}
+              "DB_USER": env["DB_USER"], "KEYCLOAK_ISSUER_URI": env["KEYCLOAK_ISSUER_URI"]}
+    cors = validate_cors(env)
+    if cors:
+        values["CORS_ALLOWED_ORIGINS"] = cors
     values.update({"DEV_HEALTHCHECK_CLIENT_ID": env["HEALTHCHECK_CLIENT_ID"],
                    "DEV_HEALTHCHECK_SUBJECT": env["HEALTHCHECK_SUBJECT"],
                    "DEV_HEALTHCHECK_AUDIENCE": env["HEALTHCHECK_AUDIENCE"]})
@@ -147,6 +149,14 @@ def password_transition_flag(service):
     password = next((item for item in variables if item.get("name") == "DB_PASSWORD"), None)
     if password and "valueFrom" not in password:
         return "--remove-env-vars=DB_PASSWORD"
+    return ""
+
+
+def cors_transition_flag(service, env):
+    """Remove a retained CORS variable when returning to backend-only DEV."""
+    variables = service["spec"]["template"]["spec"]["containers"][0].get("env", [])
+    if not validate_cors(env) and any(item.get("name") == "CORS_ALLOWED_ORIGINS" for item in variables):
+        return "--remove-env-vars=CORS_ALLOWED_ORIGINS"
     return ""
 
 
@@ -203,10 +213,12 @@ def verify_revision(revision, service, env):
                                 ("DB_USER", env["DB_USER"]), ("KEYCLOAK_ISSUER_URI", env["KEYCLOAK_ISSUER_URI"]),
                                 ("DEV_HEALTHCHECK_CLIENT_ID", env["HEALTHCHECK_CLIENT_ID"]),
                                 ("DEV_HEALTHCHECK_SUBJECT", env["HEALTHCHECK_SUBJECT"]),
-                                ("DEV_HEALTHCHECK_AUDIENCE", env["HEALTHCHECK_AUDIENCE"]),
-                                ("CORS_ALLOWED_ORIGINS", validate_cors(env))):
+                                ("DEV_HEALTHCHECK_AUDIENCE", env["HEALTHCHECK_AUDIENCE"])):
         if values.get(key) != expected_value:
             raise GuardError("Effective revision configuration mismatch: " + key)
+    cors = validate_cors(env)
+    if (cors and values.get("CORS_ALLOWED_ORIGINS") != cors) or (not cors and "CORS_ALLOWED_ORIGINS" in values):
+        raise GuardError("Effective revision configuration mismatch: CORS_ALLOWED_ORIGINS")
     secret = next((item.get("valueFrom", {}).get("secretKeyRef", {}) for item in container.get("env", [])
                    if item.get("name") == "DB_PASSWORD"), {})
     name, version = env["DB_PASSWORD_SECRET_REF"].split(":")
@@ -292,6 +304,7 @@ def main():
         with open(env["GITHUB_OUTPUT"], "a") as output:
             output.write("db_password_secret=" + reference + "\n")
             output.write("db_password_transition=" + password_transition_flag(service) + "\n")
+            output.write("cors_transition=" + cors_transition_flag(service, env) + "\n")
     elif action == "token":
         application_token(env)  # Confirm authentication before publishing/deploying; never persist the token.
     elif action == "revision":
